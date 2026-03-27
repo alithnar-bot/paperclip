@@ -106,6 +106,7 @@ If you've set a goal but nothing is happening, check these common causes:
 | **Budget** | If the CEO is above 80% of its monthly budget, it focuses only on critical tasks and may skip lower-priority delegation. |
 | **Goals** | If no company goals are set, the CEO has nothing to work from. Create a goal first. |
 | **Heartbeat** | Is the CEO's heartbeat enabled and running? Check the agent detail page for recent heartbeat history. |
+| **Agent instructions** | The CEO's delegation behavior is driven by its `AGENTS.md` instructions file. Open the CEO agent's detail page and verify that its instructions path is set and that the file includes delegation directives (subtask creation, hiring, assignment). If AGENTS.md is missing or doesn't mention delegation, the CEO won't know to break down goals and assign work. |
 
 ### "Do I have to tell the CEO to engage engineering and marketing?"
 
