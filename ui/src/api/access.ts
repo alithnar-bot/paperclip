@@ -138,6 +138,16 @@ export type CompanyMembersResponse = {
   };
 };
 
+export type CompanyUserDirectoryEntry = {
+  principalId: string;
+  status: "active";
+  user: { id: string; email: string | null; name: string | null; image: string | null } | null;
+};
+
+export type CompanyUserDirectoryResponse = {
+  users: CompanyUserDirectoryEntry[];
+};
+
 export type CompanyInviteRecord = {
   id: string;
   companyId: string | null;
@@ -294,6 +304,9 @@ export const accessApi = {
 
   listMembers: (companyId: string) =>
     api.get<CompanyMembersResponse>(`/companies/${companyId}/members`),
+
+  listUserDirectory: (companyId: string) =>
+    api.get<CompanyUserDirectoryResponse>(`/companies/${companyId}/user-directory`),
 
   updateMember: (
     companyId: string,

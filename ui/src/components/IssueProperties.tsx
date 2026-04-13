@@ -192,8 +192,8 @@ export function IssueProperties({
     enabled: !!companyId,
   });
   const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyMembers(companyId!),
-    queryFn: () => accessApi.listMembers(companyId!),
+    queryKey: queryKeys.access.companyUserDirectory(companyId!),
+    queryFn: () => accessApi.listUserDirectory(companyId!),
     enabled: !!companyId,
   });
 
@@ -267,12 +267,12 @@ export function IssueProperties({
     [agents, recentAssigneeIds],
   );
   const userLabelMap = useMemo(
-    () => buildCompanyUserLabelMap(companyMembers?.members),
-    [companyMembers?.members],
+    () => buildCompanyUserLabelMap(companyMembers?.users),
+    [companyMembers?.users],
   );
   const otherUserOptions = useMemo(
-    () => buildCompanyUserInlineOptions(companyMembers?.members, { excludeUserIds: [currentUserId, issue.createdByUserId] }),
-    [companyMembers?.members, currentUserId, issue.createdByUserId],
+    () => buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId, issue.createdByUserId] }),
+    [companyMembers?.users, currentUserId, issue.createdByUserId],
   );
 
   const assignee = issue.assigneeAgentId

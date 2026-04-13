@@ -832,19 +832,19 @@ export function Inbox() {
     refetchInterval: 5000,
   });
   const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyMembers(selectedCompanyId!),
-    queryFn: () => accessApi.listMembers(selectedCompanyId!),
+    queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
+    queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
   const currentUserId = session?.user.id ?? session?.session.userId ?? null;
 
   const companyUserLabelMap = useMemo(
-    () => buildCompanyUserLabelMap(companyMembers?.members),
-    [companyMembers?.members],
+    () => buildCompanyUserLabelMap(companyMembers?.users),
+    [companyMembers?.users],
   );
   const companyUserProfileMap = useMemo(
-    () => buildCompanyUserProfileMap(companyMembers?.members),
-    [companyMembers?.members],
+    () => buildCompanyUserProfileMap(companyMembers?.users),
+    [companyMembers?.users],
   );
 
   const mineIssues = useMemo(() => getRecentTouchedIssues(mineIssuesRaw), [mineIssuesRaw]);

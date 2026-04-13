@@ -39,8 +39,8 @@ export function ExecutionParticipantPicker({
   const approverValues = stageParticipantValues(issue.executionPolicy, "approval");
   const values = stageType === "review" ? reviewerValues : approverValues;
   const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyMembers(issue.companyId),
-    queryFn: () => accessApi.listMembers(issue.companyId),
+    queryKey: queryKeys.access.companyUserDirectory(issue.companyId),
+    queryFn: () => accessApi.listUserDirectory(issue.companyId),
     enabled: !!issue.companyId,
   });
 
@@ -49,12 +49,12 @@ export function ExecutionParticipantPicker({
     getRecentAssigneeIds(),
   );
   const userLabelMap = useMemo(
-    () => buildCompanyUserLabelMap(companyMembers?.members),
-    [companyMembers?.members],
+    () => buildCompanyUserLabelMap(companyMembers?.users),
+    [companyMembers?.users],
   );
   const otherUserOptions = useMemo(
-    () => buildCompanyUserInlineOptions(companyMembers?.members, { excludeUserIds: [currentUserId, issue.createdByUserId] }),
-    [companyMembers?.members, currentUserId, issue.createdByUserId],
+    () => buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId, issue.createdByUserId] }),
+    [companyMembers?.users, currentUserId, issue.createdByUserId],
   );
 
   const userLabel = (userId: string | null | undefined) =>

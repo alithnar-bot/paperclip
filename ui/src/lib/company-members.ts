@@ -1,4 +1,4 @@
-import type { CompanyMember } from "@/api/access";
+import type { CompanyMember, CompanyUserDirectoryEntry } from "@/api/access";
 import type { InlineEntityOption } from "@/components/InlineEntitySelector";
 import type { MentionOption } from "@/components/MarkdownEditor";
 import type { Agent, Project } from "@paperclipai/shared";
@@ -8,12 +8,15 @@ export interface CompanyUserProfile {
   image: string | null;
 }
 
+type CompanyUserRecord = Pick<CompanyMember, "principalId" | "status" | "user">
+  | CompanyUserDirectoryEntry;
+
 function fallbackUserLabel(userId: string): string {
   if (userId === "local-board") return "Board";
   return userId.slice(0, 5);
 }
 
-function baseMemberLabel(member: Pick<CompanyMember, "principalId" | "user">): string {
+function baseMemberLabel(member: Pick<CompanyUserRecord, "principalId" | "user">): string {
   const name = member.user?.name?.trim();
   if (name) return name;
   const email = member.user?.email?.trim();
@@ -21,8 +24,8 @@ function baseMemberLabel(member: Pick<CompanyMember, "principalId" | "user">): s
   return fallbackUserLabel(member.principalId);
 }
 
-function activeUniqueMembers(members: CompanyMember[] | null | undefined) {
-  const byId = new Map<string, CompanyMember>();
+function activeUniqueMembers(members: CompanyUserRecord[] | null | undefined) {
+  const byId = new Map<string, CompanyUserRecord>();
   for (const member of members ?? []) {
     if (member.status !== "active") continue;
     if (!byId.has(member.principalId)) {
@@ -32,7 +35,7 @@ function activeUniqueMembers(members: CompanyMember[] | null | undefined) {
   return [...byId.values()].sort((left, right) => baseMemberLabel(left).localeCompare(baseMemberLabel(right)));
 }
 
-export function buildCompanyUserLabelMap(members: CompanyMember[] | null | undefined): Map<string, string> {
+export function buildCompanyUserLabelMap(members: CompanyUserRecord[] | null | undefined): Map<string, string> {
   const labels = new Map<string, string>();
   for (const member of members ?? []) {
     labels.set(member.principalId, baseMemberLabel(member));
@@ -41,7 +44,7 @@ export function buildCompanyUserLabelMap(members: CompanyMember[] | null | undef
 }
 
 export function buildCompanyUserProfileMap(
-  members: CompanyMember[] | null | undefined,
+  members: CompanyUserRecord[] | null | undefined,
 ): Map<string, CompanyUserProfile> {
   const profiles = new Map<string, CompanyUserProfile>();
   for (const member of members ?? []) {
@@ -54,7 +57,7 @@ export function buildCompanyUserProfileMap(
 }
 
 export function buildCompanyUserInlineOptions(
-  members: CompanyMember[] | null | undefined,
+  members: CompanyUserRecord[] | null | undefined,
   options?: { excludeUserIds?: Iterable<string | null | undefined> },
 ): InlineEntityOption[] {
   const exclude = new Set(
@@ -71,7 +74,7 @@ export function buildCompanyUserInlineOptions(
 }
 
 export function buildCompanyUserMentionOptions(
-  members: CompanyMember[] | null | undefined,
+  members: CompanyUserRecord[] | null | undefined,
 ): MentionOption[] {
   return activeUniqueMembers(members).map((member) => ({
     id: `user:${member.principalId}`,
@@ -84,7 +87,7 @@ export function buildCompanyUserMentionOptions(
 export function buildMarkdownMentionOptions(args: {
   agents?: Array<Pick<Agent, "id" | "name" | "status" | "icon">> | null | undefined;
   projects?: Array<Pick<Project, "id" | "name" | "color">> | null | undefined;
-  members?: CompanyMember[] | null | undefined;
+  members?: CompanyUserRecord[] | null | undefined;
 }): MentionOption[] {
   const options: MentionOption[] = [
     ...buildCompanyUserMentionOptions(args.members),

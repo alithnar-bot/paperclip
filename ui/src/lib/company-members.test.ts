@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CompanyMember } from "@/api/access";
+import type { CompanyMember, CompanyUserDirectoryEntry } from "@/api/access";
 import {
   buildCompanyUserInlineOptions,
   buildCompanyUserLabelMap,
@@ -79,6 +79,27 @@ describe("company-members helpers", () => {
       { id: "user:user-1", name: "Taylor", kind: "user", userId: "user-1" },
       { id: "agent:agent-1", name: "CodexCoder", kind: "agent", agentId: "agent-1", agentIcon: "code" },
       { id: "project:project-1", name: "Paperclip App", kind: "project", projectId: "project-1", projectColor: "#336699" },
+    ]);
+  });
+
+  it("accepts read-only directory entries for assignee and mention helpers", () => {
+    const users: CompanyUserDirectoryEntry[] = [
+      {
+        principalId: "user-1",
+        status: "active",
+        user: { id: "user-1", name: "Taylor", email: "taylor@example.com", image: null },
+      },
+    ];
+
+    expect(buildCompanyUserInlineOptions(users)).toEqual([
+      {
+        id: "user:user-1",
+        label: "Taylor",
+        searchText: "Taylor taylor@example.com user-1",
+      },
+    ]);
+    expect(buildMarkdownMentionOptions({ members: users })).toEqual([
+      { id: "user:user-1", name: "Taylor", kind: "user", userId: "user-1" },
     ]);
   });
 });

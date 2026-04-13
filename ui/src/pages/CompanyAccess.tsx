@@ -78,6 +78,7 @@ export function CompanyAccess() {
   const refreshAccessData = async () => {
     if (!selectedCompanyId) return;
     await queryClient.invalidateQueries({ queryKey: queryKeys.access.companyMembers(selectedCompanyId) });
+    await queryClient.invalidateQueries({ queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId) });
     await queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(selectedCompanyId, "pending_approval") });
   };
 

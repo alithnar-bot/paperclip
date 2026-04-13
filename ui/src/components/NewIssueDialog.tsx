@@ -356,8 +356,8 @@ export function NewIssueDialog() {
     queryFn: () => authApi.getSession(),
   });
   const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyMembers(effectiveCompanyId!),
-    queryFn: () => accessApi.listMembers(effectiveCompanyId!),
+    queryKey: queryKeys.access.companyUserDirectory(effectiveCompanyId!),
+    queryFn: () => accessApi.listUserDirectory(effectiveCompanyId!),
     enabled: Boolean(effectiveCompanyId) && newIssueOpen,
   });
   const { data: experimentalSettings } = useQuery({
@@ -389,9 +389,9 @@ export function NewIssueDialog() {
     return buildMarkdownMentionOptions({
       agents,
       projects: orderedProjects,
-      members: companyMembers?.members,
+      members: companyMembers?.users,
     });
-  }, [agents, companyMembers?.members, orderedProjects]);
+  }, [agents, companyMembers?.users, orderedProjects]);
 
   const { data: assigneeAdapterModels } = useQuery({
     queryKey:
@@ -857,7 +857,7 @@ export function NewIssueDialog() {
   const assigneeOptions = useMemo<InlineEntityOption[]>(
     () => [
       ...currentUserAssigneeOption(currentUserId),
-      ...buildCompanyUserInlineOptions(companyMembers?.members, { excludeUserIds: [currentUserId] }),
+      ...buildCompanyUserInlineOptions(companyMembers?.users, { excludeUserIds: [currentUserId] }),
       ...sortAgentsByRecency(
         (agents ?? []).filter((agent) => agent.status !== "terminated"),
         recentAssigneeIds,
@@ -867,7 +867,7 @@ export function NewIssueDialog() {
         searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
       })),
     ],
-    [agents, companyMembers?.members, currentUserId, recentAssigneeIds],
+    [agents, companyMembers?.users, currentUserId, recentAssigneeIds],
   );
   const projectOptions = useMemo<InlineEntityOption[]>(
     () =>

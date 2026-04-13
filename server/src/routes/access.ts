@@ -1033,6 +1033,32 @@ async function loadCompanyMemberRecords(db: Db, companyId: string) {
   }));
 }
 
+async function loadCompanyUserDirectory(db: Db, companyId: string) {
+  const members = await db
+    .select({
+      principalId: companyMemberships.principalId,
+      status: companyMemberships.status,
+    })
+    .from(companyMemberships)
+    .where(
+      and(
+        eq(companyMemberships.companyId, companyId),
+        eq(companyMemberships.principalType, "user"),
+        eq(companyMemberships.status, "active"),
+      ),
+    )
+    .orderBy(desc(companyMemberships.updatedAt));
+
+  const userIds = [...new Set(members.map((member) => member.principalId))];
+  const userMap = await loadUsersById(db, userIds);
+
+  return members.map((member) => ({
+    principalId: member.principalId,
+    status: "active" as const,
+    user: userMap.get(member.principalId) ?? null,
+  }));
+}
+
 function inviteStateWhereClause(
   state: "active" | "accepted" | "expired" | "revoked" | undefined,
 ) {
@@ -3529,6 +3555,13 @@ export function accessRoutes(
       members,
       access: currentAccess,
     });
+  });
+
+  router.get("/companies/:companyId/user-directory", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const users = await loadCompanyUserDirectory(db, companyId);
+    res.json({ users });
   });
 
   router.patch(

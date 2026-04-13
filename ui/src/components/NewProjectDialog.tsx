@@ -78,17 +78,17 @@ export function NewProjectDialog() {
   });
 
   const { data: companyMembers } = useQuery({
-    queryKey: queryKeys.access.companyMembers(selectedCompanyId!),
-    queryFn: () => accessApi.listMembers(selectedCompanyId!),
+    queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
+    queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
     enabled: !!selectedCompanyId && newProjectOpen,
   });
 
   const mentionOptions = useMemo<MentionOption[]>(() => {
     return buildMarkdownMentionOptions({
       agents,
-      members: companyMembers?.members,
+      members: companyMembers?.users,
     });
-  }, [agents, companyMembers?.members]);
+  }, [agents, companyMembers?.users]);
 
   const createProject = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
