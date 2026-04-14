@@ -58,10 +58,48 @@ vi.mock("../services/index.js", () => ({
   workProductService: () => ({}),
 }));
 
+function registerModuleMocks() {
+  vi.doMock("../services/index.js", () => ({
+    accessService: () => ({
+      canUser: vi.fn(async () => true),
+      hasPermission: vi.fn(async () => true),
+    }),
+    agentService: () => ({
+      getById: vi.fn(async () => null),
+    }),
+    documentService: () => ({}),
+    executionWorkspaceService: () => ({}),
+    feedbackService: () => ({
+      listIssueVotesForUser: vi.fn(async () => []),
+      saveIssueVote: vi.fn(async () => ({ vote: null, consentEnabledNow: false, sharingEnabled: false })),
+    }),
+    goalService: () => ({}),
+    heartbeatService: () => mockHeartbeatService,
+    instanceSettingsService: () => ({
+      get: vi.fn(async () => ({
+        id: "instance-settings-1",
+        general: {
+          censorUsernameInLogs: false,
+          feedbackDataSharingPreference: "prompt",
+        },
+      })),
+      listCompanyIds: vi.fn(async () => ["company-1"]),
+    }),
+    issueApprovalService: () => ({}),
+    issueService: () => mockIssueService,
+    logActivity: vi.fn(async () => undefined),
+    projectService: () => ({}),
+    routineService: () => ({
+      syncRunStatusForIssue: vi.fn(async () => undefined),
+    }),
+    workProductService: () => ({}),
+  }));
+}
+
 async function createApp() {
   const [{ errorHandler }, { issueRoutes }] = await Promise.all([
-    import("../middleware/index.js"),
-    import("../routes/issues.js"),
+    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+    vi.importActual<typeof import("../routes/issues.js")>("../routes/issues.js"),
   ]);
   const app = express();
   app.use(express.json());
@@ -104,7 +142,11 @@ function makeIssue(overrides: Record<string, unknown> = {}) {
 describe("issue update comment wakeups", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.clearAllMocks();
+    vi.doUnmock("../routes/issues.js");
+    vi.doUnmock("../routes/authz.js");
+    vi.doUnmock("../middleware/index.js");
+    registerModuleMocks();
+    vi.resetAllMocks();
     mockIssueService.findMentionedAgents.mockResolvedValue([]);
     mockIssueService.getRelationSummaries.mockResolvedValue({ blockedBy: [], blocks: [] });
     mockIssueService.listWakeableBlockedDependents.mockResolvedValue([]);

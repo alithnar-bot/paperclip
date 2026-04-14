@@ -58,6 +58,38 @@ const mockAdapter = vi.hoisted(() => ({
   syncSkills: vi.fn(),
 }));
 
+vi.mock("@paperclipai/shared/telemetry", () => ({
+  trackAgentCreated: mockTrackAgentCreated,
+  trackErrorHandlerCrash: vi.fn(),
+}));
+
+vi.mock("../telemetry.js", () => ({
+  getTelemetryClient: mockGetTelemetryClient,
+}));
+
+vi.mock("../services/index.js", () => ({
+  agentService: () => mockAgentService,
+  agentInstructionsService: () => mockAgentInstructionsService,
+  accessService: () => mockAccessService,
+  approvalService: () => mockApprovalService,
+  companySkillService: () => mockCompanySkillService,
+  budgetService: () => mockBudgetService,
+  heartbeatService: () => mockHeartbeatService,
+  issueApprovalService: () => mockIssueApprovalService,
+  issueService: () => ({}),
+  logActivity: mockLogActivity,
+  secretService: () => mockSecretService,
+  syncInstructionsBundleConfigFromFilePath: mockSyncInstructionsBundleConfigFromFilePath,
+  workspaceOperationService: () => mockWorkspaceOperationService,
+}));
+
+vi.mock("../adapters/index.js", () => ({
+  findServerAdapter: vi.fn(() => mockAdapter),
+  findActiveServerAdapter: vi.fn(() => mockAdapter),
+  listAdapterModels: vi.fn(),
+  detectAdapterModel: vi.fn(),
+}));
+
 function registerModuleMocks() {
   vi.doMock("@paperclipai/shared/telemetry", () => ({
     trackAgentCreated: mockTrackAgentCreated,
@@ -109,8 +141,8 @@ function createDb(requireBoardApprovalForNewAgents = false) {
 
 async function createApp(db: Record<string, unknown> = createDb()) {
   const [{ agentRoutes }, { errorHandler }] = await Promise.all([
-    import("../routes/agents.js"),
-    import("../middleware/index.js"),
+    vi.importActual<typeof import("../routes/agents.js")>("../routes/agents.js"),
+    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
   ]);
   const app = express();
   app.use(express.json());
@@ -150,14 +182,11 @@ function makeAgent(adapterType: string) {
 describe("agent skill routes", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.doUnmock("@paperclipai/shared/telemetry");
-    vi.doUnmock("../telemetry.js");
-    vi.doUnmock("../services/index.js");
-    vi.doUnmock("../adapters/index.js");
     vi.doUnmock("../routes/agents.js");
+    vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockSyncInstructionsBundleConfigFromFilePath.mockImplementation((_agent, config) => config);
     mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
     mockAgentService.resolveByReference.mockResolvedValue({
@@ -344,9 +373,13 @@ describe("agent skill routes", () => {
         }),
       }),
     );
-    expect(mockTrackAgentCreated).toHaveBeenCalledWith(expect.anything(), {
-      agentRole: "engineer",
-    });
+    expect(mockTrackAgentCreated).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        agentId: "11111111-1111-4111-8111-111111111111",
+        agentRole: "engineer",
+      }),
+    );
   });
 
   it("materializes a managed AGENTS.md for directly created local agents", async () => {
@@ -425,17 +458,19 @@ describe("agent skill routes", () => {
       });
 
     expect([200, 201], JSON.stringify(res.body)).toContain(res.status);
-    expect(mockAgentInstructionsService.materializeManagedBundle).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "11111111-1111-4111-8111-111111111111",
-        role: "engineer",
-        adapterType: "claude_local",
-      }),
-      expect.objectContaining({
-        "AGENTS.md": expect.stringContaining("Keep the work moving until it's done."),
-      }),
-      { entryFile: "AGENTS.md", replaceExisting: false },
-    );
+    await vi.waitFor(() => {
+      expect(mockAgentInstructionsService.materializeManagedBundle).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "11111111-1111-4111-8111-111111111111",
+          role: "engineer",
+          adapterType: "claude_local",
+        }),
+        expect.objectContaining({
+          "AGENTS.md": expect.stringContaining("Keep the work moving until it's done."),
+        }),
+        { entryFile: "AGENTS.md", replaceExisting: false },
+      );
+    });
   });
 
   it("includes canonical desired skills in hire approvals", async () => {

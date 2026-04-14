@@ -8,8 +8,16 @@ const mockAgentService = vi.hoisted(() => ({
 
 const mockListServerAdapters = vi.hoisted(() => vi.fn());
 
+vi.mock("../services/agents.js", () => ({
+  agentService: () => mockAgentService,
+}));
+
+vi.mock("../adapters/index.js", () => ({
+  listServerAdapters: mockListServerAdapters,
+}));
+
 function registerModuleMocks() {
-  vi.doMock("../services/index.js", () => ({
+  vi.doMock("../services/agents.js", () => ({
     agentService: () => mockAgentService,
   }));
 
@@ -37,12 +45,10 @@ async function createApp(actor: Record<string, unknown>) {
 describe("llm routes", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.doUnmock("../services/index.js");
-    vi.doUnmock("../adapters/index.js");
     vi.doUnmock("../routes/llms.js");
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockListServerAdapters.mockReturnValue([
       { type: "codex_local", agentConfigurationDoc: "# codex_local agent configuration" },
     ]);

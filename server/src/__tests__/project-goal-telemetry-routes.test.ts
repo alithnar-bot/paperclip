@@ -26,6 +26,23 @@ const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 const mockTelemetryTrack = vi.hoisted(() => vi.fn());
 
+vi.mock("../telemetry.js", () => ({
+  getTelemetryClient: mockGetTelemetryClient,
+}));
+
+vi.mock("../services/index.js", () => ({
+  goalService: () => mockGoalService,
+  logActivity: mockLogActivity,
+  projectService: () => mockProjectService,
+  secretService: () => mockSecretService,
+  workspaceOperationService: () => mockWorkspaceOperationService,
+}));
+
+vi.mock("../services/workspace-runtime.js", () => ({
+  startRuntimeServicesForWorkspaceControl: vi.fn(),
+  stopRuntimeServicesForProjectWorkspace: vi.fn(),
+}));
+
 function registerModuleMocks() {
   vi.doMock("../telemetry.js", () => ({
     getTelemetryClient: mockGetTelemetryClient,
@@ -79,14 +96,15 @@ async function createApp(routeType: "project" | "goal") {
 describe("project and goal telemetry routes", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.clearAllMocks();
     vi.doUnmock("../telemetry.js");
     vi.doUnmock("../services/index.js");
     vi.doUnmock("../services/workspace-runtime.js");
     vi.doUnmock("../routes/projects.js");
     vi.doUnmock("../routes/goals.js");
+    vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
+    vi.resetAllMocks();
     mockGetTelemetryClient.mockReturnValue({ track: mockTelemetryTrack });
     mockProjectService.resolveByReference.mockResolvedValue({ ambiguous: false, project: null });
     mockSecretService.normalizeEnvBindingsForPersistence.mockImplementation(async (_companyId, env) => env);

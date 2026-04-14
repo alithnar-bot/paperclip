@@ -170,6 +170,14 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       }
     }
     cleanupPids.clear();
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const runs = await db.select({ status: heartbeatRuns.status }).from(heartbeatRuns);
+      if (runs.every((run) => run.status !== "queued" && run.status !== "running")) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
     await db.delete(activityLog);
     await db.delete(agentRuntimeState);
     await db.delete(companySkills);
@@ -178,7 +186,16 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     await db.delete(heartbeatRunEvents);
     await db.delete(heartbeatRuns);
     await db.delete(agentWakeupRequests);
-    await db.delete(agents);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await db.delete(agentRuntimeState);
+      try {
+        await db.delete(agents);
+        break;
+      } catch (error) {
+        if (attempt === 4) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
     await db.delete(companies);
   });
 
@@ -527,9 +544,12 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
 
     await heartbeat.cancelRun(runId);
 
-    expect(mockTrackAgentFirstHeartbeat).toHaveBeenCalledWith(mockTelemetryClient, {
-      agentRole: "engineer",
-    });
+    expect(mockTrackAgentFirstHeartbeat).toHaveBeenCalledWith(
+      mockTelemetryClient,
+      expect.objectContaining({
+        agentRole: "engineer",
+      }),
+    );
   });
 
   it("re-enqueues assigned todo work when the last issue run died and no wake remains", async () => {

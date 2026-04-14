@@ -33,14 +33,16 @@ const mockBoardAuthService = vi.hoisted(() => ({
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
-vi.mock("../services/index.js", () => ({
-  accessService: () => mockAccessService,
-  agentService: () => mockAgentService,
-  boardAuthService: () => mockBoardAuthService,
-  deduplicateAgentName: vi.fn(),
-  logActivity: mockLogActivity,
-  notifyHireApproved: vi.fn(),
-}));
+function registerModuleMocks() {
+  vi.doMock("../services/index.js", () => ({
+    accessService: () => mockAccessService,
+    agentService: () => mockAgentService,
+    boardAuthService: () => mockBoardAuthService,
+    deduplicateAgentName: vi.fn(),
+    logActivity: mockLogActivity,
+    notifyHireApproved: vi.fn(),
+  }));
+}
 
 function createDbStub() {
   const createdInvite = {
@@ -98,8 +100,10 @@ function createDbStub() {
 }
 
 async function createApp(actor: Record<string, unknown>, db: Record<string, unknown>) {
-  const { accessRoutes } = await import("../routes/access.js");
-  const { errorHandler } = await import("../middleware/index.js");
+  const [{ accessRoutes }, { errorHandler }] = await Promise.all([
+    vi.importActual<typeof import("../routes/access.js")>("../routes/access.js"),
+    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+  ]);
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -122,7 +126,12 @@ async function createApp(actor: Record<string, unknown>, db: Record<string, unkn
 describe("POST /companies/:companyId/openclaw/invite-prompt", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.clearAllMocks();
+    vi.doUnmock("../services/index.js");
+    vi.doUnmock("../routes/access.js");
+    vi.doUnmock("../routes/authz.js");
+    vi.doUnmock("../middleware/index.js");
+    registerModuleMocks();
+    vi.resetAllMocks();
     mockAccessService.canUser.mockResolvedValue(false);
     mockAgentService.getById.mockReset();
     mockLogActivity.mockResolvedValue(undefined);

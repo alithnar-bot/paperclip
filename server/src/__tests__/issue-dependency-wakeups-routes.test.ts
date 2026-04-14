@@ -16,52 +16,53 @@ const mockIssueService = vi.hoisted(() => ({
   findMentionedAgents: vi.fn(async () => []),
 }));
 
-function registerModuleMocks() {
-  vi.doMock("../services/index.js", () => ({
-    accessService: () => ({
-      canUser: vi.fn(),
-      hasPermission: vi.fn(),
-    }),
-    agentService: () => ({
-      getById: vi.fn(),
-    }),
-    documentService: () => ({
-      getIssueDocumentPayload: vi.fn(async () => ({})),
-    }),
-    executionWorkspaceService: () => ({
-      getById: vi.fn(),
-    }),
-    feedbackService: () => ({}),
-    goalService: () => ({
-      getById: vi.fn(),
-      getDefaultCompanyGoal: vi.fn(),
-    }),
-    heartbeatService: () => ({
-      wakeup: mockWakeup,
-      reportRunActivity: vi.fn(async () => undefined),
-    }),
-    instanceSettingsService: () => ({
-      get: vi.fn(),
-      listCompanyIds: vi.fn(),
-    }),
-    issueApprovalService: () => ({}),
-    issueService: () => mockIssueService,
-    logActivity: vi.fn(async () => undefined),
-    projectService: () => ({
-      getById: vi.fn(),
-      listByIds: vi.fn(async () => []),
-    }),
-    routineService: () => ({
-      syncRunStatusForIssue: vi.fn(async () => undefined),
-    }),
-    workProductService: () => ({
-      listForIssue: vi.fn(async () => []),
-    }),
-  }));
-}
+vi.mock("../services/index.js", () => ({
+  accessService: () => ({
+    canUser: vi.fn(),
+    hasPermission: vi.fn(),
+  }),
+  agentService: () => ({
+    getById: vi.fn(),
+  }),
+  documentService: () => ({
+    getIssueDocumentPayload: vi.fn(async () => ({})),
+  }),
+  executionWorkspaceService: () => ({
+    getById: vi.fn(),
+  }),
+  feedbackService: () => ({}),
+  goalService: () => ({
+    getById: vi.fn(),
+    getDefaultCompanyGoal: vi.fn(),
+  }),
+  heartbeatService: () => ({
+    wakeup: mockWakeup,
+    reportRunActivity: vi.fn(async () => undefined),
+  }),
+  instanceSettingsService: () => ({
+    get: vi.fn(),
+    listCompanyIds: vi.fn(),
+  }),
+  issueApprovalService: () => ({}),
+  issueService: () => mockIssueService,
+  logActivity: vi.fn(async () => undefined),
+  projectService: () => ({
+    getById: vi.fn(),
+    listByIds: vi.fn(async () => []),
+  }),
+  routineService: () => ({
+    syncRunStatusForIssue: vi.fn(async () => undefined),
+  }),
+  workProductService: () => ({
+    listForIssue: vi.fn(async () => []),
+  }),
+}));
 
 async function createApp() {
-  const { issueRoutes } = await import("../routes/issues.js");
+  const [{ issueRoutes }, { errorHandler }] = await Promise.all([
+    vi.importActual<typeof import("../routes/issues.js")>("../routes/issues.js"),
+    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+  ]);
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -75,19 +76,17 @@ async function createApp() {
     next();
   });
   app.use("/api", issueRoutes({} as any, {} as any));
-  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    res.status(err?.status ?? 500).json({ error: err?.message ?? "Internal server error" });
-  });
+  app.use(errorHandler);
   return app;
 }
 
 describe("issue dependency wakeups in issue routes", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.doUnmock("../services/index.js");
     vi.doUnmock("../routes/issues.js");
-    registerModuleMocks();
-    vi.clearAllMocks();
+    vi.doUnmock("../routes/authz.js");
+    vi.doUnmock("../middleware/index.js");
+    vi.resetAllMocks();
     mockIssueService.getAncestors.mockResolvedValue([]);
     mockIssueService.getComment.mockResolvedValue(null);
     mockIssueService.getCommentCursor.mockResolvedValue({

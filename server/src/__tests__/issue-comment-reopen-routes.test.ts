@@ -57,6 +57,32 @@ const mockRoutineService = vi.hoisted(() => ({
   syncRunStatusForIssue: vi.fn(async () => undefined),
 }));
 
+vi.mock("@paperclipai/shared/telemetry", () => ({
+  trackAgentTaskCompleted: vi.fn(),
+  trackErrorHandlerCrash: vi.fn(),
+}));
+
+vi.mock("../telemetry.js", () => ({
+  getTelemetryClient: vi.fn(() => ({ track: vi.fn() })),
+}));
+
+vi.mock("../services/index.js", () => ({
+  accessService: () => mockAccessService,
+  agentService: () => mockAgentService,
+  documentService: () => ({}),
+  executionWorkspaceService: () => ({}),
+  feedbackService: () => mockFeedbackService,
+  goalService: () => ({}),
+  heartbeatService: () => mockHeartbeatService,
+  instanceSettingsService: () => mockInstanceSettingsService,
+  issueApprovalService: () => ({}),
+  issueService: () => mockIssueService,
+  logActivity: mockLogActivity,
+  projectService: () => ({}),
+  routineService: () => mockRoutineService,
+  workProductService: () => ({}),
+}));
+
 function registerModuleMocks() {
   vi.doMock("@paperclipai/shared/telemetry", () => ({
     trackAgentTaskCompleted: vi.fn(),
@@ -93,8 +119,8 @@ function createApp() {
 
 async function installActor(app: express.Express, actor?: Record<string, unknown>) {
   const [{ issueRoutes }, { errorHandler }] = await Promise.all([
-    import("../routes/issues.js"),
-    import("../middleware/index.js"),
+    vi.importActual<typeof import("../routes/issues.js")>("../routes/issues.js"),
+    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
   ]);
   app.use((req, _res, next) => {
     (req as any).actor = actor ?? {
@@ -138,13 +164,11 @@ function makeIssue(status: "todo" | "done") {
 describe("issue comment reopen routes", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.doUnmock("@paperclipai/shared/telemetry");
-    vi.doUnmock("../telemetry.js");
-    vi.doUnmock("../services/index.js");
     vi.doUnmock("../routes/issues.js");
+    vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockIssueService.getById.mockReset();
     mockIssueService.assertCheckoutOwner.mockReset();
     mockIssueService.update.mockReset();

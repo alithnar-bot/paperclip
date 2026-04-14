@@ -2,13 +2,26 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import type { Db } from "@paperclipai/db";
-import * as devServerStatus from "../dev-server-status.js";
-import { healthRoutes } from "../routes/health.js";
 import { serverVersion } from "../version.js";
+import { healthRoutes } from "../routes/health.js";
+
+const mockReadPersistedDevServerStatus = vi.hoisted(() => vi.fn());
+
+vi.mock("../dev-server-status.js", () => ({
+  readPersistedDevServerStatus: mockReadPersistedDevServerStatus,
+  toDevServerHealthStatus: vi.fn(),
+}));
+
+function createApp(db?: Db) {
+  const app = express();
+  app.use("/health", healthRoutes(db));
+  return app;
+}
 
 describe("GET /health", () => {
   beforeEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    mockReadPersistedDevServerStatus.mockReturnValue(undefined);
   });
 
   afterEach(() => {
@@ -16,9 +29,7 @@ describe("GET /health", () => {
   });
 
   it("returns 200 with status ok", async () => {
-    vi.spyOn(devServerStatus, "readPersistedDevServerStatus").mockReturnValue(undefined);
-    const app = express();
-    app.use("/health", healthRoutes());
+    const app = createApp();
 
     const res = await request(app).get("/health");
     expect(res.status).toBe(200);
@@ -26,12 +37,10 @@ describe("GET /health", () => {
   });
 
   it("returns 200 when the database probe succeeds", async () => {
-    vi.spyOn(devServerStatus, "readPersistedDevServerStatus").mockReturnValue(undefined);
     const db = {
       execute: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
     } as unknown as Db;
-    const app = express();
-    app.use("/health", healthRoutes(db));
+    const app = createApp(db);
 
     const res = await request(app).get("/health");
 
@@ -40,12 +49,10 @@ describe("GET /health", () => {
   });
 
   it("returns 503 when the database probe fails", async () => {
-    vi.spyOn(devServerStatus, "readPersistedDevServerStatus").mockReturnValue(undefined);
     const db = {
       execute: vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED")),
     } as unknown as Db;
-    const app = express();
-    app.use("/health", healthRoutes(db));
+    const app = createApp(db);
 
     const res = await request(app).get("/health");
 

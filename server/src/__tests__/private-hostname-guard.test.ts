@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import { privateHostnameGuard } from "../middleware/private-hostname-guard.js";
@@ -24,10 +24,6 @@ function createApp(opts: { enabled: boolean; allowedHostnames?: string[]; bindHo
 }
 
 describe("privateHostnameGuard", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it("allows requests when disabled", async () => {
     const app = createApp({ enabled: false });
     const res = await request(app).get("/api/health").set("Host", "dotta-macbook-pro:3100");

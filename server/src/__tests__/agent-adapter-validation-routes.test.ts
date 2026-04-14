@@ -59,6 +59,26 @@ const mockInstanceSettingsService = vi.hoisted(() => ({
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
+vi.mock("../services/index.js", () => ({
+  agentService: () => mockAgentService,
+  agentInstructionsService: () => mockAgentInstructionsService,
+  accessService: () => mockAccessService,
+  approvalService: () => mockApprovalService,
+  companySkillService: () => mockCompanySkillService,
+  budgetService: () => mockBudgetService,
+  heartbeatService: () => mockHeartbeatService,
+  issueApprovalService: () => mockIssueApprovalService,
+  issueService: () => ({}),
+  logActivity: mockLogActivity,
+  secretService: () => mockSecretService,
+  syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
+  workspaceOperationService: () => ({}),
+}));
+
+vi.mock("../services/instance-settings.js", () => ({
+  instanceSettingsService: () => mockInstanceSettingsService,
+}));
+
 function registerModuleMocks() {
   vi.doMock("../services/index.js", () => ({
     agentService: () => mockAgentService,
@@ -95,8 +115,10 @@ const externalAdapter: ServerAdapterModule = {
 const missingAdapterType = "missing_adapter_validation_test";
 
 async function createApp() {
-  const { agentRoutes } = await import("../routes/agents.js");
-  const { errorHandler } = await import("../middleware/index.js");
+  const [{ agentRoutes }, { errorHandler }] = await Promise.all([
+    vi.importActual<typeof import("../routes/agents.js")>("../routes/agents.js"),
+    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+  ]);
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -122,14 +144,12 @@ async function unregisterTestAdapter(type: string) {
 describe("agent routes adapter validation", () => {
   beforeEach(async () => {
     vi.resetModules();
-    vi.clearAllMocks();
-    vi.doUnmock("../services/index.js");
-    vi.doUnmock("../services/instance-settings.js");
     vi.doUnmock("../routes/agents.js");
+    vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
+    vi.doUnmock("../routes/agents.js");
     registerModuleMocks();
-    await unregisterTestAdapter("external_test");
-    await unregisterTestAdapter(missingAdapterType);
+    vi.resetAllMocks();
     mockCompanySkillService.listRuntimeSkillEntries.mockResolvedValue([]);
     mockCompanySkillService.resolveRequestedSkillKeys.mockResolvedValue([]);
     mockAccessService.canUser.mockResolvedValue(true);
@@ -161,6 +181,8 @@ describe("agent routes adapter validation", () => {
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
+    await unregisterTestAdapter("external_test");
+    await unregisterTestAdapter(missingAdapterType);
   });
 
   afterEach(async () => {

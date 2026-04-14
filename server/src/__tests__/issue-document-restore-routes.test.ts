@@ -25,6 +25,31 @@ const mockAgentService = vi.hoisted(() => ({
 
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
 
+vi.mock("../services/index.js", () => ({
+  accessService: () => mockAccessService,
+  agentService: () => mockAgentService,
+  documentService: () => mockDocumentsService,
+  executionWorkspaceService: () => ({}),
+  feedbackService: () => ({}),
+  goalService: () => ({}),
+  heartbeatService: () => ({
+    wakeup: vi.fn(async () => undefined),
+    reportRunActivity: vi.fn(async () => undefined),
+  }),
+  instanceSettingsService: () => ({
+    getExperimental: vi.fn(async () => ({})),
+    getGeneral: vi.fn(async () => ({ feedbackDataSharingPreference: "prompt" })),
+  }),
+  issueApprovalService: () => ({}),
+  issueService: () => mockIssueService,
+  logActivity: mockLogActivity,
+  projectService: () => ({}),
+  routineService: () => ({
+    syncRunStatusForIssue: vi.fn(async () => undefined),
+  }),
+  workProductService: () => ({}),
+}));
+
 function registerModuleMocks() {
   vi.doMock("../services/index.js", () => ({
     accessService: () => mockAccessService,
@@ -77,11 +102,11 @@ async function createApp() {
 describe("issue document revision routes", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.doUnmock("../services/index.js");
+    vi.doUnmock("../services/routines.js");
     vi.doUnmock("../routes/issues.js");
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockIssueService.getById.mockResolvedValue({
       id: issueId,
       companyId,

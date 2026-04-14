@@ -83,25 +83,27 @@ const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockTrackRoutineCreated = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 
-vi.mock("@paperclipai/shared/telemetry", () => ({
-  trackRoutineCreated: mockTrackRoutineCreated,
-  trackErrorHandlerCrash: vi.fn(),
-}));
+function registerModuleMocks() {
+  vi.doMock("@paperclipai/shared/telemetry", () => ({
+    trackRoutineCreated: mockTrackRoutineCreated,
+    trackErrorHandlerCrash: vi.fn(),
+  }));
 
-vi.mock("../telemetry.js", () => ({
-  getTelemetryClient: mockGetTelemetryClient,
-}));
+  vi.doMock("../telemetry.js", () => ({
+    getTelemetryClient: mockGetTelemetryClient,
+  }));
 
-vi.mock("../services/index.js", () => ({
-  accessService: () => mockAccessService,
-  logActivity: mockLogActivity,
-  routineService: () => mockRoutineService,
-}));
+  vi.doMock("../services/index.js", () => ({
+    accessService: () => mockAccessService,
+    logActivity: mockLogActivity,
+    routineService: () => mockRoutineService,
+  }));
+}
 
 async function createApp(actor: Record<string, unknown>) {
   const [{ errorHandler }, { routineRoutes }] = await Promise.all([
-    import("../middleware/index.js"),
-    import("../routes/routines.js"),
+    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+    vi.importActual<typeof import("../routes/routines.js")>("../routes/routines.js"),
   ]);
   const app = express();
   app.use(express.json());
@@ -117,7 +119,14 @@ async function createApp(actor: Record<string, unknown>) {
 describe("routine routes", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.clearAllMocks();
+    vi.doUnmock("@paperclipai/shared/telemetry");
+    vi.doUnmock("../telemetry.js");
+    vi.doUnmock("../services/index.js");
+    vi.doUnmock("../routes/routines.js");
+    vi.doUnmock("../routes/authz.js");
+    vi.doUnmock("../middleware/index.js");
+    registerModuleMocks();
+    vi.resetAllMocks();
     mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
     mockRoutineService.create.mockResolvedValue(routine);
     mockRoutineService.get.mockResolvedValue(routine);

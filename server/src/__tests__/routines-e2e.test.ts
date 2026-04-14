@@ -28,51 +28,53 @@ import {
 } from "./helpers/embedded-postgres.js";
 import { accessService } from "../services/access.js";
 
-vi.mock("../services/routines.js", async () => {
-  const actual = await vi.importActual<typeof import("../services/routines.js")>("../services/routines.js");
+function registerRoutineServiceMock() {
+  vi.doMock("../services/routines.js", async () => {
+    const actual = await vi.importActual<typeof import("../services/routines.js")>("../services/routines.js");
 
-  return {
-    ...actual,
-    routineService: (db: any) =>
-      actual.routineService(db, {
-        heartbeat: {
-          wakeup: async (agentId: string, wakeupOpts: any) => {
-            const issueId =
-              (typeof wakeupOpts?.payload?.issueId === "string" && wakeupOpts.payload.issueId) ||
-              (typeof wakeupOpts?.contextSnapshot?.issueId === "string" && wakeupOpts.contextSnapshot.issueId) ||
-              null;
-            if (!issueId) return null;
+    return {
+      ...actual,
+      routineService: (db: any) =>
+        actual.routineService(db, {
+          heartbeat: {
+            wakeup: async (agentId: string, wakeupOpts: any) => {
+              const issueId =
+                (typeof wakeupOpts?.payload?.issueId === "string" && wakeupOpts.payload.issueId) ||
+                (typeof wakeupOpts?.contextSnapshot?.issueId === "string" && wakeupOpts.contextSnapshot.issueId) ||
+                null;
+              if (!issueId) return null;
 
-            const issue = await db
-              .select({ companyId: issues.companyId })
-              .from(issues)
-              .where(eq(issues.id, issueId))
-              .then((rows: Array<{ companyId: string }>) => rows[0] ?? null);
-            if (!issue) return null;
+              const issue = await db
+                .select({ companyId: issues.companyId })
+                .from(issues)
+                .where(eq(issues.id, issueId))
+                .then((rows: Array<{ companyId: string }>) => rows[0] ?? null);
+              if (!issue) return null;
 
-            const queuedRunId = randomUUID();
-            await db.insert(heartbeatRuns).values({
-              id: queuedRunId,
-              companyId: issue.companyId,
-              agentId,
-              invocationSource: wakeupOpts?.source ?? "assignment",
-              triggerDetail: wakeupOpts?.triggerDetail ?? null,
-              status: "queued",
-              contextSnapshot: { ...(wakeupOpts?.contextSnapshot ?? {}), issueId },
-            });
-            await db
-              .update(issues)
-              .set({
-                executionRunId: queuedRunId,
-                executionLockedAt: new Date(),
-              })
-              .where(eq(issues.id, issueId));
-            return { id: queuedRunId };
+              const queuedRunId = randomUUID();
+              await db.insert(heartbeatRuns).values({
+                id: queuedRunId,
+                companyId: issue.companyId,
+                agentId,
+                invocationSource: wakeupOpts?.source ?? "assignment",
+                triggerDetail: wakeupOpts?.triggerDetail ?? null,
+                status: "queued",
+                contextSnapshot: { ...(wakeupOpts?.contextSnapshot ?? {}), issueId },
+              });
+              await db
+                .update(issues)
+                .set({
+                  executionRunId: queuedRunId,
+                  executionLockedAt: new Date(),
+                })
+                .where(eq(issues.id, issueId));
+              return { id: queuedRunId };
+            },
           },
-        },
-      }),
-  };
-});
+        }),
+    };
+  });
+}
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -128,8 +130,11 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
     vi.doUnmock("../services/agent-instructions.js");
     vi.doUnmock("../services/workspace-runtime.js");
     vi.doUnmock("../services/index.js");
+    vi.doUnmock("../services/routines.js");
     vi.doUnmock("../routes/routines.js");
+    vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
+    registerRoutineServiceMock();
   });
 
   async function createApp(actor: Record<string, unknown>) {

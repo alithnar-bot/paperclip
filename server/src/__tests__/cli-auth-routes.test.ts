@@ -34,9 +34,22 @@ vi.mock("../services/index.js", () => ({
   deduplicateAgentName: vi.fn((name: string) => name),
 }));
 
+function registerModuleMocks() {
+  vi.doMock("../services/index.js", () => ({
+    accessService: () => mockAccessService,
+    agentService: () => mockAgentService,
+    boardAuthService: () => mockBoardAuthService,
+    logActivity: mockLogActivity,
+    notifyHireApproved: vi.fn(),
+    deduplicateAgentName: vi.fn((name: string) => name),
+  }));
+}
+
 async function createApp(actor: any) {
-  const { accessRoutes } = await import("../routes/access.js");
-  const { errorHandler } = await import("../middleware/index.js");
+  const [{ accessRoutes }, { errorHandler }] = await Promise.all([
+    vi.importActual<typeof import("../routes/access.js")>("../routes/access.js"),
+    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
+  ]);
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -59,7 +72,10 @@ async function createApp(actor: any) {
 describe("cli auth routes", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.clearAllMocks();
+    vi.doUnmock("../routes/access.js");
+    vi.doUnmock("../middleware/index.js");
+    registerModuleMocks();
+    vi.resetAllMocks();
   });
 
   it("creates a CLI auth challenge with approval metadata", async () => {

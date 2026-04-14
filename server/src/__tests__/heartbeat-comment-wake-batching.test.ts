@@ -95,6 +95,10 @@ async function waitFor(condition: () => boolean | Promise<boolean>, timeoutMs = 
   throw new Error("Timed out waiting for condition");
 }
 
+async function closeDbClient(db: ReturnType<typeof createDb> | undefined) {
+  await db?.$client?.end?.({ timeout: 0 });
+}
+
 async function createControlledGatewayServer() {
   const server = createServer();
   const wss = new WebSocketServer({ server });
@@ -225,6 +229,7 @@ describe("heartbeat comment wake batching", () => {
   }, 45_000);
 
   afterAll(async () => {
+    await closeDbClient(db);
     await instance?.stop();
     if (dataDir) {
       fs.rmSync(dataDir, { recursive: true, force: true });

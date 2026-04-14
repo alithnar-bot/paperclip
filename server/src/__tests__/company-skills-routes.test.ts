@@ -20,28 +20,26 @@ const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockTrackSkillImported = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 
-function registerModuleMocks() {
-  vi.doMock("@paperclipai/shared/telemetry", () => ({
-    trackSkillImported: mockTrackSkillImported,
-    trackErrorHandlerCrash: vi.fn(),
-  }));
+vi.mock("@paperclipai/shared/telemetry", () => ({
+  trackSkillImported: mockTrackSkillImported,
+  trackErrorHandlerCrash: vi.fn(),
+}));
 
-  vi.doMock("../telemetry.js", () => ({
-    getTelemetryClient: mockGetTelemetryClient,
-  }));
+vi.mock("../telemetry.js", () => ({
+  getTelemetryClient: mockGetTelemetryClient,
+}));
 
-  vi.doMock("../services/index.js", () => ({
-    accessService: () => mockAccessService,
-    agentService: () => mockAgentService,
-    companySkillService: () => mockCompanySkillService,
-    logActivity: mockLogActivity,
-  }));
-}
+vi.mock("../services/index.js", () => ({
+  accessService: () => mockAccessService,
+  agentService: () => mockAgentService,
+  companySkillService: () => mockCompanySkillService,
+  logActivity: mockLogActivity,
+}));
 
 async function createApp(actor: Record<string, unknown>) {
   const [{ companySkillRoutes }, { errorHandler }] = await Promise.all([
-    import("../routes/company-skills.js"),
-    import("../middleware/index.js"),
+    vi.importActual<typeof import("../routes/company-skills.js")>("../routes/company-skills.js"),
+    vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
   ]);
   const app = express();
   app.use(express.json());
@@ -57,13 +55,10 @@ async function createApp(actor: Record<string, unknown>) {
 describe("company skill mutation permissions", () => {
   beforeEach(() => {
     vi.resetModules();
-    vi.doUnmock("@paperclipai/shared/telemetry");
-    vi.doUnmock("../telemetry.js");
-    vi.doUnmock("../services/index.js");
     vi.doUnmock("../routes/company-skills.js");
+    vi.doUnmock("../routes/authz.js");
     vi.doUnmock("../middleware/index.js");
-    registerModuleMocks();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
     mockCompanySkillService.importFromSource.mockResolvedValue({
       imported: [],
