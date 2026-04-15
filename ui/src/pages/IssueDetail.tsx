@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type Ref } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type Ref } from "react";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { Link, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient, type InfiniteData, type QueryClient } from "@tanstack/react-query";
@@ -488,7 +488,10 @@ function InboxMobileToolbar({
 
 type IssueDetailChatTabProps = {
   issueId: string;
-  issue: Issue;
+  companyId: string;
+  projectId: string | null;
+  issueStatus: Issue["status"];
+  executionRunId: string | null;
   comments: IssueDetailComment[];
   hasOlderComments: boolean;
   commentsLoadingOlder: boolean;
@@ -519,9 +522,12 @@ type IssueDetailChatTabProps = {
   onImageClick: (src: string) => void;
 };
 
-function IssueDetailChatTab({
+const IssueDetailChatTab = memo(function IssueDetailChatTab({
   issueId,
-  issue,
+  companyId,
+  projectId,
+  issueStatus,
+  executionRunId,
   comments,
   hasOlderComments,
   commentsLoadingOlder,
@@ -562,7 +568,7 @@ function IssueDetailChatTab({
   const { data: activeRun, isLoading: activeRunLoading } = useQuery({
     queryKey: queryKeys.issues.activeRun(issueId),
     queryFn: () => heartbeatsApi.activeRunForIssue(issueId),
-    enabled: !!issue.executionRunId || issue.status === "in_progress",
+    enabled: !!executionRunId || issueStatus === "in_progress",
     refetchInterval: liveRunCount > 0 ? false : 3000,
     placeholderData: keepPreviousDataForSameQueryTail<ActiveRunForIssue | null>(issueId),
   });
@@ -673,9 +679,9 @@ function IssueDetailChatTab({
         timelineEvents={timelineEvents}
         liveRuns={liveRuns}
         activeRun={activeRun}
-        companyId={issue.companyId}
-        projectId={issue.projectId}
-        issueStatus={issue.status}
+        companyId={companyId}
+        projectId={projectId}
+        issueStatus={issueStatus}
         agentMap={agentMap}
         currentUserId={currentUserId}
         draftKey={draftKey}
@@ -703,7 +709,7 @@ function IssueDetailChatTab({
       />
     </div>
   );
-}
+});
 
 type IssueDetailActivityTabProps = {
   issueId: string;
@@ -1060,6 +1066,14 @@ export function IssueDetail() {
     () => buildIssuePropertiesPanelKey(issue ?? null, childIssues),
     [childIssues, issue],
   );
+  const panelIssue = useMemo(
+    () => issue ?? null,
+    [issue?.id, issuePanelKey],
+  );
+  const panelChildIssues = useMemo(
+    () => childIssues,
+    [issuePanelKey],
+  );
   const showRichSubIssuesSection = shouldRenderRichSubIssuesSection(childIssuesLoading, childIssues.length);
   const openNewSubIssue = useCallback(() => {
     if (!issue) return;
@@ -1103,6 +1117,7 @@ export function IssueDetail() {
     () => mergeIssueComments(comments ?? [], optimisticComments),
     [comments, optimisticComments],
   );
+  const breadcrumbTitle = issue?.title ?? issueId ?? "Issue";
 
   const invalidateIssueDetail = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) });
@@ -1743,12 +1758,17 @@ export function IssueDetail() {
   });
 
   useEffect(() => {
-    const titleLabel = issue?.title ?? issueId ?? "Issue";
     setBreadcrumbs([
       sourceBreadcrumb,
-      { label: hasLiveRuns ? `🔵 ${titleLabel}` : titleLabel },
+      { label: hasLiveRuns ? `🔵 ${breadcrumbTitle}` : breadcrumbTitle },
     ]);
-  }, [setBreadcrumbs, sourceBreadcrumb, issue, issueId, hasLiveRuns]);
+  }, [
+    breadcrumbTitle,
+    hasLiveRuns,
+    setBreadcrumbs,
+    sourceBreadcrumb.href,
+    sourceBreadcrumb.label,
+  ]);
 
   const isFromInbox = resolvedIssueDetailState?.issueDetailSource === "inbox";
 
@@ -1790,20 +1810,28 @@ export function IssueDetail() {
   }, [issue?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!issue) {
+    if (!panelIssue) {
       closePanel();
       return;
     }
     openPanel(
       <IssueProperties
-        issue={issue}
-        childIssues={childIssues}
+        issue={panelIssue}
+        childIssues={panelChildIssues}
         onAddSubIssue={openNewSubIssue}
         onUpdate={handleIssuePropertiesUpdate}
       />
     );
     return () => closePanel();
-  }, [closePanel, handleIssuePropertiesUpdate, issuePanelKey, openNewSubIssue, openPanel]);
+  }, [
+    closePanel,
+    handleIssuePropertiesUpdate,
+    issuePanelKey,
+    openNewSubIssue,
+    openPanel,
+    panelChildIssues,
+    panelIssue,
+  ]);
 
   const goToInboxShortcutArmedRef = useRef(false);
   const goToInboxShortcutTimeoutRef = useRef<number | null>(null);
@@ -2032,6 +2060,36 @@ export function IssueDetail() {
   }, [showInboxToolbar, backHref, issue?.id, issueHidden, archivePending, setMobileToolbar]);
 
   const attachmentsInitialLoading = attachmentsLoading && attachments === undefined;
+  const loadOlderComments = useCallback(() => {
+    void fetchOlderComments();
+  }, [fetchOlderComments]);
+  const handleCommentVote = useCallback(async (commentId: string, vote: "up" | "down", options?: { allowSharing?: boolean; reason?: string }) => {
+    await feedbackVoteMutation.mutateAsync({
+      targetType: "issue_comment",
+      targetId: commentId,
+      vote,
+      reason: options?.reason,
+      allowSharing: options?.allowSharing,
+      sharingPreferenceAtSubmit: feedbackDataSharingPreference,
+    });
+  }, [feedbackDataSharingPreference, feedbackVoteMutation]);
+  const handleChatAdd = useCallback(async (body: string, reopen?: boolean, reassignment?: CommentReassignment) => {
+    if (reassignment) {
+      await addCommentAndReassign.mutateAsync({ body, reopen, reassignment });
+      return;
+    }
+    await addComment.mutateAsync({ body, reopen });
+  }, [addComment, addCommentAndReassign]);
+  const handleCommentImageUpload = useCallback(async (file: File) => {
+    const attachment = await uploadAttachment.mutateAsync(file);
+    return attachment.contentPath;
+  }, [uploadAttachment]);
+  const handleCommentAttachImage = useCallback(async (file: File) => {
+    await uploadAttachment.mutateAsync(file);
+  }, [uploadAttachment]);
+  const handleInterruptQueuedRun = useCallback(async (runId: string) => {
+    await interruptQueuedComment.mutateAsync(runId);
+  }, [interruptQueuedComment]);
 
   if (isLoading) return <IssueDetailLoadingState headerSeed={issueHeaderSeed} />;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
@@ -2557,13 +2615,14 @@ export function IssueDetail() {
           {detailTab === "chat" ? (
             <IssueDetailChatTab
               issueId={issue.id}
-              issue={issue}
+              companyId={issue.companyId}
+              projectId={issue.projectId ?? null}
+              issueStatus={issue.status}
+              executionRunId={issue.executionRunId ?? null}
               comments={threadComments}
               hasOlderComments={hasOlderComments}
               commentsLoadingOlder={commentsLoadingOlder}
-              onLoadOlderComments={() => {
-                void fetchOlderComments();
-              }}
+              onLoadOlderComments={loadOlderComments}
               composerRef={commentComposerRef}
               feedbackVotes={feedbackVotes}
               feedbackDataSharingPreference={feedbackDataSharingPreference}
@@ -2576,33 +2635,11 @@ export function IssueDetail() {
               suggestedAssigneeValue={suggestedAssigneeValue}
               mentions={mentionOptions}
               composerDisabledReason={commentComposerDisabledReason}
-              onVote={async (commentId, vote, options) => {
-                await feedbackVoteMutation.mutateAsync({
-                  targetType: "issue_comment",
-                  targetId: commentId,
-                  vote,
-                  reason: options?.reason,
-                  allowSharing: options?.allowSharing,
-                  sharingPreferenceAtSubmit: feedbackDataSharingPreference,
-                });
-              }}
-              onAdd={async (body, reopen, reassignment) => {
-                if (reassignment) {
-                  await addCommentAndReassign.mutateAsync({ body, reopen, reassignment });
-                  return;
-                }
-                await addComment.mutateAsync({ body, reopen });
-              }}
-              onImageUpload={async (file) => {
-                const attachment = await uploadAttachment.mutateAsync(file);
-                return attachment.contentPath;
-              }}
-              onAttachImage={async (file) => {
-                await uploadAttachment.mutateAsync(file);
-              }}
-              onInterruptQueued={async (runId) => {
-                await interruptQueuedComment.mutateAsync(runId);
-              }}
+              onVote={handleCommentVote}
+              onAdd={handleChatAdd}
+              onImageUpload={handleCommentImageUpload}
+              onAttachImage={handleCommentAttachImage}
+              onInterruptQueued={handleInterruptQueuedRun}
               onCancelQueued={handleCancelQueuedComment}
               interruptingQueuedRunId={interruptQueuedComment.isPending ? interruptQueuedComment.variables ?? null : null}
               onImageClick={handleChatImageClick}
