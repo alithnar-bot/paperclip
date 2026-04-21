@@ -326,6 +326,58 @@ export const BUDGET_INCIDENT_RESOLUTION_ACTIONS = [
 ] as const;
 export type BudgetIncidentResolutionAction = (typeof BUDGET_INCIDENT_RESOLUTION_ACTIONS)[number];
 
+export const MEMORY_EXTRACTION_JOB_OPERATION_TYPES = [
+  "capture",
+  "compaction",
+  "dreaming",
+] as const;
+export type MemoryExtractionJobOperationType = (typeof MEMORY_EXTRACTION_JOB_OPERATION_TYPES)[number];
+
+export const MEMORY_EXTRACTION_JOB_STATUSES = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+] as const;
+export type MemoryExtractionJobStatus = (typeof MEMORY_EXTRACTION_JOB_STATUSES)[number];
+
+export const MEMORY_EXTRACTION_JOB_HOOK_KINDS = [
+  "post_run_capture",
+  "issue_comment_capture",
+  "issue_document_capture",
+] as const;
+export type MemoryExtractionJobHookKind = (typeof MEMORY_EXTRACTION_JOB_HOOK_KINDS)[number];
+
+export const MEMORY_EXTRACTION_JOB_SOURCE_KINDS = [
+  "run",
+  "comment",
+  "document",
+  "manual",
+  "maintenance",
+] as const;
+export type MemoryExtractionJobSourceKind = (typeof MEMORY_EXTRACTION_JOB_SOURCE_KINDS)[number];
+
+export const MEMORY_EXTRACTION_JOB_DISPATCHER_KINDS = [
+  "in_process",
+  "host_worker",
+] as const;
+export type MemoryExtractionJobDispatcherKind = (typeof MEMORY_EXTRACTION_JOB_DISPATCHER_KINDS)[number];
+
+export const MEMORY_EXTRACTION_JOB_ATTRIBUTION_MODES = [
+  "included_in_run",
+  "billed_directly",
+  "external_invoice",
+  "untracked",
+] as const;
+export type MemoryExtractionJobAttributionMode = (typeof MEMORY_EXTRACTION_JOB_ATTRIBUTION_MODES)[number];
+
+export const MEMORY_EXTRACTION_JOB_EFFECTIVE_STATES = [
+  ...MEMORY_EXTRACTION_JOB_STATUSES,
+  "stuck",
+] as const;
+export type MemoryExtractionJobEffectiveState = (typeof MEMORY_EXTRACTION_JOB_EFFECTIVE_STATES)[number];
+
 export const HEARTBEAT_INVOCATION_SOURCES = [
   "timer",
   "assignment",

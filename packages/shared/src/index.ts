@@ -183,6 +183,23 @@ export {
 } from "./constants.js";
 
 export {
+  MEMORY_EXTRACTION_JOB_ATTRIBUTION_MODES,
+  MEMORY_EXTRACTION_JOB_DISPATCHER_KINDS,
+  MEMORY_EXTRACTION_JOB_EFFECTIVE_STATES,
+  MEMORY_EXTRACTION_JOB_HOOK_KINDS,
+  MEMORY_EXTRACTION_JOB_OPERATION_TYPES,
+  MEMORY_EXTRACTION_JOB_SOURCE_KINDS,
+  MEMORY_EXTRACTION_JOB_STATUSES,
+  type MemoryExtractionJobAttributionMode,
+  type MemoryExtractionJobDispatcherKind,
+  type MemoryExtractionJobEffectiveState,
+  type MemoryExtractionJobHookKind,
+  type MemoryExtractionJobOperationType,
+  type MemoryExtractionJobSourceKind,
+  type MemoryExtractionJobStatus,
+} from "./constants.js";
+
+export {
   ALL_INTERFACES_BIND_HOST,
   LOOPBACK_BIND_HOST,
   inferBindModeFromHost,
@@ -437,6 +454,17 @@ export type {
   QuotaWindow,
   ProviderQuotaResult,
 } from "./types/index.js";
+
+export type {
+  MemoryExtractionJob,
+  MemoryExtractionJobDetail,
+  MemoryExtractionJobDetailResponse,
+  MemoryExtractionJobListItem,
+  MemoryExtractionJobListResponse,
+  MemoryExtractionJobRerunResponse,
+  MemoryExtractionJobSourceRef,
+  MemoryExtractionJobUsage,
+} from "./types/memory.js";
 export {
   ISSUE_REFERENCE_IDENTIFIER_RE,
   buildIssueReferenceHref,
@@ -745,6 +773,20 @@ export {
   type SetPluginState,
   type ListPluginState,
 } from "./validators/index.js";
+
+export {
+  listMemoryExtractionJobsQuerySchema,
+  memoryExtractionJobAttributionModeSchema,
+  memoryExtractionJobDispatcherKindSchema,
+  memoryExtractionJobEffectiveStateSchema,
+  memoryExtractionJobHookKindSchema,
+  memoryExtractionJobOperationTypeSchema,
+  memoryExtractionJobSourceKindSchema,
+  memoryExtractionJobStatusSchema,
+  rerunMemoryExtractionJobSchema,
+  type ListMemoryExtractionJobsQuery,
+  type RerunMemoryExtractionJob,
+} from "./validators/memory.js";
 
 export { API_PREFIX, API } from "./api.js";
 export { normalizeAgentUrlKey, deriveAgentUrlKey, isUuidLike } from "./agent-url-key.js";

@@ -42,6 +42,9 @@ import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
 import { conflict } from "./errors.js";
+import { createMemoryJobDispatcher } from "./services/memory-job-dispatcher.js";
+import { createPostRunMemoryCaptureHandler } from "./services/memory-job-capture.js";
+import { memoryJobStore } from "./services/memory-job-store.js";
 import type {
   InstanceDatabaseBackupRunResult,
   InstanceDatabaseBackupTrigger,
@@ -642,6 +645,18 @@ export async function startServer(): Promise<StartedServer> {
     resolveSessionFromHeaders,
   });
 
+  const postRunMemoryCaptureHandler = createPostRunMemoryCaptureHandler();
+  const memoryJobDispatcher = createMemoryJobDispatcher({
+    store: memoryJobStore(db as any),
+    resolveHandler: (job) => {
+      if (job.operationType === "capture" && job.sourceKind === "run" && job.hookKind === "post_run_capture") {
+        return postRunMemoryCaptureHandler;
+      }
+      return null;
+    },
+  });
+  memoryJobDispatcher.start();
+
   void reconcilePersistedRuntimeServicesOnStartup(db as any)
     .then((result) => {
       if (result.reconciled > 0) {
@@ -831,6 +846,7 @@ export async function startServer(): Promise<StartedServer> {
   {
     const shutdown = async (signal: "SIGINT" | "SIGTERM") => {
       const telemetryClient = getTelemetryClient();
+      memoryJobDispatcher.stop();
       if (telemetryClient) {
         telemetryClient.stop();
         await telemetryClient.flush();

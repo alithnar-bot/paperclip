@@ -160,6 +160,16 @@ export type {
 export type { CostEvent, CostSummary, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject } from "./cost.js";
 export type { FinanceEvent, FinanceSummary, FinanceByBiller, FinanceByKind } from "./finance.js";
 export type {
+  MemoryExtractionJob,
+  MemoryExtractionJobDetail,
+  MemoryExtractionJobDetailResponse,
+  MemoryExtractionJobListItem,
+  MemoryExtractionJobListResponse,
+  MemoryExtractionJobRerunResponse,
+  MemoryExtractionJobSourceRef,
+  MemoryExtractionJobUsage,
+} from "./memory.js";
+export type {
   AgentWakeupResponse,
   AgentWakeupSkipped,
   HeartbeatRun,

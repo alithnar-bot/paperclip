@@ -83,6 +83,8 @@ import {
   getIssueContinuationSummaryDocument,
   refreshIssueContinuationSummary,
 } from "./issue-continuation-summary.js";
+import { enqueuePostRunMemoryCaptureJob } from "./memory-job-capture.js";
+import { memoryJobStore } from "./memory-job-store.js";
 import { executionWorkspaceService, mergeExecutionWorkspaceConfig } from "./execution-workspaces.js";
 import { workspaceOperationService } from "./workspace-operations.js";
 import { isProcessGroupAlive, terminateLocalService } from "./local-service-supervisor.js";
@@ -1822,6 +1824,7 @@ export function heartbeatService(db: Db) {
   const secretsSvc = secretService(db);
   const companySkills = companySkillService(db);
   const issuesSvc = issueService(db);
+  const memoryJobs = memoryJobStore(db);
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
   const activeRunExecutions = new Set<string>();
@@ -1899,6 +1902,17 @@ export function heartbeatService(db: Db) {
       })
       .from(issues)
       .where(and(eq(issues.id, issueId), eq(issues.companyId, companyId)))
+      .then((rows) => rows[0] ?? null);
+  }
+
+  async function getIssueMemoryCaptureScope(companyId: string, issueId: string) {
+    return db
+      .select({
+        projectId: issues.projectId,
+        goalId: issues.goalId,
+      })
+      .from(issues)
+      .where(and(eq(issues.companyId, companyId), eq(issues.id, issueId)))
       .then((rows) => rows[0] ?? null);
   }
 
@@ -5663,6 +5677,27 @@ export function heartbeatService(db: Db) {
             await onLog(
               "stderr",
               `[paperclip] Failed to post run summary comment: ${err instanceof Error ? err.message : String(err)}\n`,
+            );
+          }
+
+          try {
+            const contextSnapshot = parseObject(livenessRun.contextSnapshot);
+            const issueScope = await getIssueMemoryCaptureScope(livenessRun.companyId, issueId);
+            await enqueuePostRunMemoryCaptureJob({
+              store: memoryJobs,
+              run: livenessRun,
+              sourceIssueId: issueId,
+              sourceProjectId: issueScope?.projectId ?? readNonEmptyString(contextSnapshot.projectId),
+              sourceGoalId: issueScope?.goalId ?? readNonEmptyString(contextSnapshot.goalId),
+            });
+          } catch (err) {
+            logger.warn(
+              {
+                error: err instanceof Error ? err.message : String(err),
+                runId: livenessRun.id,
+                issueId,
+              },
+              "failed to enqueue post-run memory capture job",
             );
           }
         }

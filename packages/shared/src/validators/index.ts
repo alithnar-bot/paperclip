@@ -247,6 +247,20 @@ export {
 } from "./finance.js";
 
 export {
+  listMemoryExtractionJobsQuerySchema,
+  memoryExtractionJobAttributionModeSchema,
+  memoryExtractionJobDispatcherKindSchema,
+  memoryExtractionJobEffectiveStateSchema,
+  memoryExtractionJobHookKindSchema,
+  memoryExtractionJobOperationTypeSchema,
+  memoryExtractionJobSourceKindSchema,
+  memoryExtractionJobStatusSchema,
+  rerunMemoryExtractionJobSchema,
+  type ListMemoryExtractionJobsQuery,
+  type RerunMemoryExtractionJob,
+} from "./memory.js";
+
+export {
   createAssetImageMetadataSchema,
   type CreateAssetImageMetadata,
 } from "./asset.js";
