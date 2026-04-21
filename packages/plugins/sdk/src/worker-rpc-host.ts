@@ -41,6 +41,7 @@ import { fileURLToPath } from "node:url";
 import type {
   AskUserQuestionsInteraction,
   PaperclipPluginManifestV1,
+  RequestConfirmationInteraction,
   SuggestTasksInteraction,
 } from "@paperclipai/shared";
 
@@ -737,6 +738,23 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
             },
             authorAgentId: options?.authorAgentId,
           }) as Promise<AskUserQuestionsInteraction>;
+        },
+
+        async requestConfirmation(
+          issueId: string,
+          interaction,
+          companyId: string,
+          options?: { authorAgentId?: string },
+        ): Promise<RequestConfirmationInteraction> {
+          return callHost("issues.createInteraction", {
+            issueId,
+            companyId,
+            interaction: {
+              ...interaction,
+              kind: "request_confirmation",
+            },
+            authorAgentId: options?.authorAgentId,
+          }) as Promise<RequestConfirmationInteraction>;
         },
 
         documents: {

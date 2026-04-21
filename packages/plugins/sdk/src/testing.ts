@@ -591,6 +591,9 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       async askUserQuestions(issueId, interaction, companyId, options) {
         return this.createInteraction(issueId, { ...interaction, kind: "ask_user_questions" }, companyId, options) as Promise<any>;
       },
+      async requestConfirmation(issueId, interaction, companyId, options) {
+        return this.createInteraction(issueId, { ...interaction, kind: "request_confirmation" }, companyId, options) as Promise<any>;
+      },
       documents: {
         async list(issueId, companyId) {
           requireCapability(manifest, capabilitySet, "issue.documents.read");

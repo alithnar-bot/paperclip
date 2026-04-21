@@ -212,6 +212,60 @@ describe("paperclip MCP tools", () => {
     });
   });
 
+  it("creates request_confirmation interactions with plan target payloads", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockJsonResponse({ id: "interaction-1", kind: "request_confirmation" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tool = getTool("paperclipRequestConfirmation");
+    await tool.execute({
+      issueId: "PAP-1135",
+      idempotencyKey: "confirmation:PAP-1135:plan:33333333-3333-4333-8333-333333333333",
+      title: "Plan approval",
+      payload: {
+        version: 1,
+        prompt: "Accept this plan?",
+        acceptLabel: "Accept plan",
+        allowDeclineReason: true,
+        rejectLabel: "Request changes",
+        rejectRequiresReason: true,
+        supersedeOnUserComment: true,
+        target: {
+          type: "issue_document",
+          key: "plan",
+          revisionId: "33333333-3333-4333-8333-333333333333",
+          revisionNumber: 3,
+        },
+      },
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/issues/PAP-1135/interactions");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      kind: "request_confirmation",
+      continuationPolicy: "wake_assignee",
+      idempotencyKey: "confirmation:PAP-1135:plan:33333333-3333-4333-8333-333333333333",
+      title: "Plan approval",
+      payload: {
+        version: 1,
+        prompt: "Accept this plan?",
+        acceptLabel: "Accept plan",
+        allowDeclineReason: true,
+        rejectLabel: "Request changes",
+        rejectRequiresReason: true,
+        supersedeOnUserComment: true,
+        target: {
+          type: "issue_document",
+          key: "plan",
+          revisionId: "33333333-3333-4333-8333-333333333333",
+          revisionNumber: 3,
+        },
+      },
+    });
+  });
+
   it("creates approvals with the expected company-scoped payload", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       mockJsonResponse({ id: "approval-1" }),
