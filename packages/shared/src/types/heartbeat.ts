@@ -39,9 +39,9 @@ export interface HeartbeatRun {
   processStartedAt: Date | null;
   retryOfRunId: string | null;
   processLossRetryCount: number;
-  scheduledRetryAt: Date | null;
-  scheduledRetryAttempt: number;
-  scheduledRetryReason: string | null;
+  scheduledRetryAt?: Date | null;
+  scheduledRetryAttempt?: number;
+  scheduledRetryReason?: string | null;
   retryExhaustedReason?: string | null;
   livenessState: RunLivenessState | null;
   livenessReason: string | null;
