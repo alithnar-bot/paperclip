@@ -156,7 +156,7 @@ describeEmbeddedPostgres("memory job routes", () => {
     );
 
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain("effectiveState and status cannot be used together");
+    expect(JSON.stringify(res.body.details)).toContain("effectiveState and status cannot be used together");
   });
 
   it("returns job detail scoped to the requested company", async () => {

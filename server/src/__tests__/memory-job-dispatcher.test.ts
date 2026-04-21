@@ -36,10 +36,11 @@ async function waitForJobStatus(
   jobId: string,
   status: string,
   now: Date,
+  predicate: (detail: Awaited<ReturnType<ReturnType<typeof memoryJobStore>["getDetail"]>>) => boolean = () => true,
 ) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const detail = await store.getDetail(companyId, jobId, { now });
-    if (detail?.status === status) {
+    if (detail?.status === status && predicate(detail)) {
       return detail;
     }
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -149,7 +150,14 @@ describeEmbeddedPostgres("memory job dispatcher", () => {
 
     await dispatcher.tick();
 
-    const runningDetail = await waitForJobStatus(store, companyId, queued.id, "running", currentTime);
+    const runningDetail = await waitForJobStatus(
+      store,
+      companyId,
+      queued.id,
+      "running",
+      currentTime,
+      (detail) => detail?.providerJobId === "provider-job-async",
+    );
     expect(runningDetail).toMatchObject({
       id: queued.id,
       status: "running",

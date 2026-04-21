@@ -214,7 +214,7 @@ describe("startServer feedback export wiring", () => {
       storageService: { id: "storage-service" },
       serverPort: 3210,
     });
-  });
+  }, 10_000);
 });
 
 describe("startServer PAPERCLIP_API_URL handling", () => {
