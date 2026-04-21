@@ -1,4 +1,4 @@
-import { companies, createDb } from "@paperclipai/db";
+import { companies, createDb } from "../packages/db/src/index.js";
 import { loadConfig } from "../server/src/config.js";
 import { issueReferenceService } from "../server/src/services/issue-references.js";
 
