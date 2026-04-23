@@ -249,3 +249,34 @@ Three interpretations I'm making that deserve your pushback before Phase 2:
 3. Sort-induced repositioning on priority change as feedback, not disruption (§Additional 1).
 
 Waiting on your read.
+
+---
+
+## Phase 3a revision — recent-runs feed replaces icon strip
+
+Post-smoke-test decision (captured after Phase 3a polish round 1). The icon-strip treatment specified in §7 proved information-sparse in practice — run id, outcome detail, and timestamp were all hidden behind hover, forcing an interaction to decode any individual run.
+
+**Replaced with:** a compact prior-runs feed in the left zone, placed below the Latest Run card. Three one-line rows, each showing:
+
+- Status icon (colored, matching `runStatusIcons` — shape carries outcome)
+- Abbreviated run id (`font-mono`)
+- Status label (plain text, e.g., `succeeded`, `failed`, `timed_out`)
+- Relative time (right-aligned, `tabular-nums`)
+
+Each row is a `<Link>` to the run detail. Information is visible in the row, no hover required.
+
+**Hero split adjusts to 75/25** — left zone expands to 75% to absorb the feed (activity pill + Latest Run card + prior-runs feed + idle hint), right zone shrinks to 25% with the budget card alone. Three-zone layout from polish round 1 collapses back to two-zone.
+
+**Why this is better for the primary goal:**
+- *Jakob's Law* — users already know how to read the Latest Run card's anatomy (icon + id + status + time); the compact rows reuse that mental model at lower visual weight.
+- *Recognition over Recall* — outcomes readable at a glance, not color-only under hover.
+- *Information Scent* — failed runs announce themselves in the feed; monitoring users can spot a problematic recent pattern without interacting.
+- *Serial Position + monitoring-primary hierarchy* — Latest Run remains the dominant surface; the compact feed reinforces "right now matters most" while still delivering recent health as required by rubric Section 1 item 3.
+
+**What this doesn't change:**
+- Rubric Section 1 item 3 (recent health) is still satisfied — arguably better than the icon strip.
+- Rubric Section 4 (chart data reachability) is unaffected — chart consolidation still happens in Phase 3b.
+- The "recent issues reachable" rubric item is unrelated — that's the in-flight tasks list below the hero.
+- Cyan-relocation call from §6 unchanged — activity pill still carries the live signal; no card-level cyan on Latest Run.
+
+This revision supersedes §7 for implementation purposes. The original §7 is preserved above as the concept as-authored; this note records the drift.

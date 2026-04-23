@@ -1169,18 +1169,10 @@ function SummaryRow({ label, children }: { label: string; children: React.ReactN
   );
 }
 
-function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: string }) {
-  const sorted = useMemo(
-    () => [...runs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
-    [runs],
-  );
-
-  const liveRun = sorted.find((r) => r.status === "running" || r.status === "queued");
-  const run = liveRun ?? sorted[0];
-
-  const summaryRaw = run?.resultJson
+function LatestRunCard({ run, agentId }: { run: HeartbeatRun; agentId: string }) {
+  const summaryRaw = run.resultJson
     ? String((run.resultJson as Record<string, unknown>).summary ?? (run.resultJson as Record<string, unknown>).result ?? "")
-    : run?.error ?? "";
+    : run.error ?? "";
 
   const summary = useMemo(() => {
     if (!summaryRaw) return "";
@@ -1198,8 +1190,6 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
     }
     return excerpt.join(" ");
   }, [summaryRaw]);
-
-  if (!run) return null;
 
   const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
   const StatusIcon = statusInfo.icon;
@@ -1279,17 +1269,22 @@ function AgentOverview({
       });
   }, [assignedIssues]);
 
-  const recentRuns = useMemo(() => {
-    return [...runs]
-      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-      .slice(-7);
-  }, [runs]);
-
-  // agent.status can lag behind run state; derive running-ness from runs to match the live-run card.
-  const hasLiveRun = useMemo(
-    () => runs.some((r) => r.status === "running" || r.status === "queued"),
+  const sortedRuns = useMemo(
+    () => [...runs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
     [runs],
   );
+  const liveRun = useMemo(
+    () => sortedRuns.find((r) => r.status === "running" || r.status === "queued"),
+    [sortedRuns],
+  );
+  const latestRun = liveRun ?? sortedRuns[0] ?? null;
+  const priorRuns = useMemo(() => {
+    if (!latestRun) return [];
+    return sortedRuns.filter((r) => r.id !== latestRun.id).slice(0, 3);
+  }, [sortedRuns, latestRun]);
+
+  // agent.status can lag behind run state; derive running-ness from runs to match the live-run card.
+  const hasLiveRun = Boolean(liveRun);
   const activityStatus = useMemo(() => {
     // Agent-level states take precedence over run-derivation.
     if (agent.status === "paused" || agent.status === "pending_approval" || agent.status === "terminated") {
@@ -1321,19 +1316,42 @@ function AgentOverview({
 
   return (
     <div className="space-y-8">
-      {/* Hero: three-zone — left "what's happening now" | middle budget | right recent runs */}
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr_1fr] gap-4">
-        {/* Left zone — current work */}
+      {/* Hero: two-zone — left "what's happening now" (75%) | right budget (25%) */}
+      <div className="grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-4">
+        {/* Left zone — current work + recent-run feed */}
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <span className={cn("inline-block h-2 w-2 rounded-full shrink-0", statusDotClass)} />
             <span className={cn("text-sm font-medium", statusTextClass)}>{statusLabel}</span>
           </div>
-          {runs.length > 0 ? (
-            <LatestRunCard runs={runs} agentId={agentRouteId} />
+          {latestRun ? (
+            <LatestRunCard run={latestRun} agentId={agentRouteId} />
           ) : (
             <div className="border border-border rounded-none p-4 text-sm text-muted-foreground">
               No runs yet.
+            </div>
+          )}
+          {priorRuns.length > 0 && (
+            <div className="border border-border rounded-none">
+              {priorRuns.map((run, idx) => {
+                const tone = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
+                const Icon = tone.icon;
+                return (
+                  <Link
+                    key={run.id}
+                    to={`/agents/${agentRouteId}/runs/${run.id}`}
+                    className={cn(
+                      "flex items-center gap-2 px-3 py-1.5 text-xs no-underline hover:bg-muted/50 transition-colors",
+                      idx > 0 && "border-t border-border",
+                    )}
+                  >
+                    <Icon className={cn("h-3 w-3 shrink-0", tone.color, run.status === "running" && "animate-spin")} />
+                    <span className="font-mono text-muted-foreground">{run.id.slice(0, 8)}</span>
+                    <span>{run.status.replace(/_/g, " ")}</span>
+                    <span className="ml-auto text-muted-foreground tabular-nums">{relativeTime(run.createdAt)}</span>
+                  </Link>
+                );
+              })}
             </div>
           )}
           {showIdleHint && (
@@ -1351,7 +1369,7 @@ function AgentOverview({
           )}
         </div>
 
-        {/* Middle zone — budget position */}
+        {/* Right zone — budget position */}
         <div>
           {budgetSummary && budgetSummary.amount > 0 ? (
             <div className="border border-border rounded-none p-4 space-y-2">
@@ -1385,46 +1403,6 @@ function AgentOverview({
               No budget configured.
             </div>
           )}
-        </div>
-
-        {/* Right zone — recent runs (7 icons, shape + color for WCAG color-independence) */}
-        <div>
-          <div className="border border-border rounded-none p-4 space-y-2">
-            <div className="text-xs text-muted-foreground">Recent runs — last 7</div>
-            {recentRuns.length === 0 ? (
-              <div className="text-xs text-muted-foreground">No runs yet.</div>
-            ) : (
-              <div className="flex items-center gap-2">
-                {recentRuns.map((run) => {
-                  const tone = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
-                  const Icon = tone.icon;
-                  return (
-                    <Tooltip key={run.id}>
-                      <TooltipTrigger asChild>
-                        <Link
-                          to={`/agents/${agentRouteId}/runs/${run.id}`}
-                          aria-label={`Run ${run.id.slice(0, 8)} — ${run.status}, ${relativeTime(run.createdAt)}`}
-                          className={cn(
-                            "inline-flex shrink-0 no-underline transition-opacity hover:opacity-70",
-                            tone.color,
-                          )}
-                        >
-                          <Icon className={cn("h-3.5 w-3.5", run.status === "running" && "animate-spin")} />
-                        </Link>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="text-xs">
-                        <span className="font-mono">{run.id.slice(0, 8)}</span>
-                        {" · "}
-                        {run.status}
-                        {" · "}
-                        {relativeTime(run.createdAt)}
-                      </TooltipContent>
-                    </Tooltip>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </div>
       </div>
 

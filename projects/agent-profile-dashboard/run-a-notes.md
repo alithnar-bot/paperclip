@@ -94,3 +94,48 @@ None introduced in this polish. `TooltipProvider` was already mounted globally; 
 ### Findings surfaced
 
 - The Phase 3a initial tooltip implementation using native `title` was a miss — the concept explicitly specified interactive tooltips as part of the recent-runs deliverable, and native title attributes are not reliable cross-browser. Trust the DS tooltip primitive by default for any hover-content requirement in future phases.
+
+---
+
+## Phase 3a polish round 2 — compact run feed replaces icon strip
+
+Concept-level revision, not a layout tweak. The Phase 3a icon strip (§7 of the concept) looked compact but proved information-sparse — run id, outcome detail, and timestamp all required hover to decode. A three-row compact feed below the Latest Run card reads everything at a glance.
+
+### Decisions
+
+- **Recent-runs icon strip removed; 3 compact rows take its place.** Each row is a single `<Link>` with: colored status icon (12px), mono run-id (8 chars), status label (text, replace underscores with spaces), and right-aligned relative time. Rows sit in a bordered container with `border-t` separators between them (not `divide-y` — explicit per-row treatment is more composable when future work adds row-level affordances).
+  - *Lens — Jakob's Law:* the Latest Run card is already the user's mental model for "one run" — icon + id + status + time. Compact rows reuse the vocabulary at lower visual weight.
+  - *Lens — Recognition over Recall:* users see outcomes in the row itself; hover isn't required to decode. Failed runs pop at a glance.
+  - *Lens — Information Scent:* a monitoring user scanning the feed can spot a recent pattern (e.g., three consecutive failures) without interacting. The icon strip required hover per-dot.
+  - *Lens — Serial Position + Miller's Law:* 3 prior rows + 1 Latest Run card = 4 items, well within working-memory limits. Primary-vs-secondary hierarchy stays clean — the card dominates, the feed supports.
+
+- **Hero collapses back to 75/25 two-zone.** Left zone expands to 75% (activity pill + Latest Run card + prior-runs feed + idle hint). Right zone shrinks to 25% with the budget card alone. The three-zone layout from polish round 1 is gone — the feed needs the card's width to read cleanly at `text-xs`, and a 25% zone would have squeezed the relative-time column unreasonably.
+  - Budget card at 25% was already verified in polish round 1; no change to its readability.
+
+- **Latest Run selection moved out of `LatestRunCard` into the caller.** `LatestRunCard` signature changed from `{ runs, agentId }` to `{ run, agentId }`. The caller (`AgentOverview`) now owns the sort/find/latest/prior computation via a single `sortedRuns` memo, then derives `latestRun = liveRun ?? sortedRuns[0]` and `priorRuns = sortedRuns.filter(r => r.id !== latestRun.id).slice(0, 3)`. Simpler component, caller handles zero-runs and duplication avoidance.
+  - *Why in the caller:* the prior-runs feed needs to know which run the Latest Run card is showing, to exclude it. Keeping selection inside `LatestRunCard` would require an awkward callback or duplicated logic.
+
+- **No tooltips on the compact rows.** All information is visible in the row itself — tooltip would be redundant. `aria-label` isn't set either since the row content is already readable text; the `<Link>` has its own discoverable text for screen readers.
+
+### DS deviations — "pass with explicit justification"
+
+- **Compact rows use `px-3 py-1.5 text-xs`.** Mirrors the density of `EntityRow` (used in the in-flight tasks list below) for visual rhythm. No new tokens; standard Tailwind spacing from the existing scale.
+- **`border-t` between rows instead of wrapping each row in a border.** Matches the `EntityRow` pattern (in-flight tasks list) where rows use `border-b` on all but the last. Same effect, same DS vocabulary.
+
+### Findings surfaced
+
+- **`runStatusIcons` is still the source of truth.** The icon + color pair drives both the Latest Run card's status row and the compact feed rows. Consistent across the module; no drift.
+- **Edge case: live run not at position 0.** If there are runs created after the live run that already finished (unlikely but possible with overlapping executions), the compact feed would show those newer-completed runs above older-completed runs, skipping the live run's timeline position. The Latest Run card still correctly shows the live run. This is an edge case and the concept's spec ("3 runs before the Latest Run, not including it") is what drives the behavior — filtering by id is correct per spec.
+- **Empty-state symmetry.** With the icon strip gone, the prior-runs feed simply doesn't render when there are fewer than 2 runs total. No "No prior runs yet" message — the zero/one-run case doesn't warrant a placeholder below an already-informative Latest Run card (or its own "No runs yet" fallback). `Progressive Disclosure` in action.
+
+### Rubric alignment check
+
+- **Section 1 item 3 (recent health):** satisfied — arguably stronger than the icon strip. Three runs with full outcome + timestamp in the monitoring frame, no interaction needed.
+- **Section 1 monitoring-no-scroll:** the feed adds ~75–90px of vertical height to the hero (3 rows × ~28px + dividers). Hero previously ~180–240px tall; now ~255–330px with feed present. Still well inside a 720px content-area budget at 1440×900.
+- **Section 5 DS compliance:** sharp corners preserved on the feed container; no new tokens; no new components extracted; no rounded-corner deviations.
+- **Section 6 "Hierarchy clarity":** Latest Run card remains dominant by size and content density; compact feed is visually secondary, reinforcing the primary-monitoring goal.
+- **Section 6 "Visual restraint":** the feed replaces a decorative icon strip with scannable information rows — fewer visual tricks, more content. Net restraint gain.
+
+### Concept doc updated
+
+Added a "Phase 3a revision" note at the end of `run-a-concept.md` recording this drift from §7. The original §7 is preserved as authored; the revision supersedes it for implementation.
