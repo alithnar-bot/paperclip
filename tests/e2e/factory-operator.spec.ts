@@ -45,21 +45,25 @@ function buildReviewState(nowIso: string) {
 
 test.describe("factory operator tab", () => {
   test("renders factory recovery state and updates after a resume action", async ({ page }) => {
-    const companyRes = await page.request.post("/api/companies", {
-      data: { name: COMPANY_NAME },
-    });
-    expect(companyRes.ok()).toBe(true);
-    const company = await companyRes.json();
+    let companyId: string | null = null;
 
-    const projectRes = await page.request.post(`/api/companies/${company.id}/projects`, {
-      data: { name: PROJECT_NAME, status: "in_progress" },
-    });
-    expect(projectRes.ok()).toBe(true);
-    const project = await projectRes.json();
+    try {
+      const companyRes = await page.request.post("/api/companies", {
+        data: { name: COMPANY_NAME },
+      });
+      expect(companyRes.ok()).toBe(true);
+      const company = await companyRes.json();
+      companyId = company.id;
 
-    const projectRef = project.urlKey ?? project.id;
-    const nowIso = new Date("2026-04-24T14:30:00.000Z").toISOString();
-    let resumed = false;
+      const projectRes = await page.request.post(`/api/companies/${company.id}/projects`, {
+        data: { name: PROJECT_NAME, status: "in_progress" },
+      });
+      expect(projectRes.ok()).toBe(true);
+      const project = await projectRes.json();
+
+      const projectRef = project.urlKey ?? project.id;
+      const nowIso = new Date("2026-04-24T14:30:00.000Z").toISOString();
+      let resumed = false;
 
     const initialRecovery = {
       projectId: project.id,
@@ -322,5 +326,10 @@ test.describe("factory operator tab", () => {
     await expect(page.getByText("No current recovery blockers.")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText("No recovery work is pending.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Resume" })).toHaveCount(0);
+    } finally {
+      if (companyId) {
+        await page.request.delete(`/api/companies/${companyId}`).catch(() => {});
+      }
+    }
   });
 });
