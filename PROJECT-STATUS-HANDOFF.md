@@ -4,7 +4,7 @@ Updated: 2026-04-24 10:22:11 UTC
 Repo root: `/Users/halbot/work/.worktrees/paperclip-factory-core-v1`
 Branch: `feat/factory-core-v1`
 Upstream tracking: `origin/feat/factory-core-v1`
-Latest pushed commit: `4934acd27e7d18859e4eb9e533e9da3e49203384`
+Primary feature commit: `4934acd27e7d18859e4eb9e533e9da3e49203384`
 
 ## Current status
 
