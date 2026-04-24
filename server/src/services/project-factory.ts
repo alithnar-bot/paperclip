@@ -37,7 +37,11 @@ import type {
   ProjectFactoryIntakeSummary,
   ProjectFactoryLaunchTaskExecutionResult,
   ProjectFactoryMissingContextCandidate,
+  ProjectFactoryOperatorSummary,
   ProjectFactoryQuestion,
+  ProjectFactoryRecoveryIssue,
+  ProjectFactoryRecoverySummary,
+  ProjectFactoryResumeTaskExecutionResult,
   ProjectFactoryReviewState,
   ProjectFactoryReviewVerdict,
   ProjectFactoryTaskExecution,
@@ -664,6 +668,35 @@ function computeBlockingUpstreamGates(args: {
     });
 }
 
+async function localPathExists(targetPath: string | null | undefined) {
+  if (!targetPath) return false;
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildExecutionReviewSummaries(reviews: ProjectFactoryExecutionReview[]) {
+  const summariesByExecutionId = new Map<string, ProjectFactoryExecutionReviewSummary>();
+  for (const review of reviews) {
+    const existing = summariesByExecutionId.get(review.executionId);
+    if (existing) {
+      existing.reviewCount += 1;
+      continue;
+    }
+    summariesByExecutionId.set(review.executionId, {
+      executionId: review.executionId,
+      taskId: review.taskId,
+      reviewCount: 1,
+      latestVerdict: review.verdict,
+      latestReviewedAt: review.decidedAt,
+    });
+  }
+  return Array.from(summariesByExecutionId.values());
+}
+
 export function projectFactoryService(db: Db) {
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperations = workspaceOperationService(db);
@@ -1079,6 +1112,148 @@ export function projectFactoryService(db: Db) {
       )}\n`,
       "utf8",
     );
+  }
+
+  async function buildReviewState(projectId: string): Promise<ProjectFactoryReviewState> {
+    const project = await getProject(projectId);
+    const evaluations = await listGateEvaluationsInternal(project.id);
+    const reviews = await listExecutionReviewsInternal(project.id);
+
+    let manifestGates: FactoryProjectManifest["gates"] = DEFAULT_FACTORY_GATES;
+    try {
+      const manifest = await readCompiledManifest(project.id);
+      manifestGates = manifest.gates;
+    } catch {
+      manifestGates = DEFAULT_FACTORY_GATES;
+    }
+
+    const latestEvaluationByGateId = new Map<string, ProjectFactoryGateEvaluation>();
+    for (const evaluation of evaluations) {
+      const existing = latestEvaluationByGateId.get(evaluation.gateId);
+      if (!existing || existing.decidedAt < evaluation.decidedAt) {
+        latestEvaluationByGateId.set(evaluation.gateId, evaluation);
+      }
+    }
+
+    const gates: ProjectFactoryGateState[] = manifestGates.map((gate) => {
+      const latestEvaluation = latestEvaluationByGateId.get(gate.id) ?? null;
+      const defaultStatus = factoryGateStatusSchema.parse(gate.status);
+      const effectiveStatus = latestEvaluation
+        ? factoryGateStatusSchema.parse(latestEvaluation.status)
+        : defaultStatus;
+      return {
+        gateId: gate.id,
+        phaseId: gate.phaseId,
+        title: gate.title,
+        blocking: gate.blocking,
+        defaultStatus,
+        effectiveStatus,
+        latestEvaluation,
+      };
+    });
+
+    return {
+      projectId: project.id,
+      gates,
+      evaluations,
+      executionReviewSummaries: buildExecutionReviewSummaries(reviews),
+    };
+  }
+
+  async function buildRecoverySummary(projectId: string): Promise<ProjectFactoryRecoverySummary> {
+    const project = await getProject(projectId);
+    const executionRows = await listTaskExecutionRows(project.id);
+    const executions = await hydrateTaskExecutions(executionRows);
+    const workspaces = await executionWorkspacesSvc.list(project.companyId, { projectId: project.id });
+    const referencedWorkspaceIds = new Set(
+      executionRows
+        .map((row) => row.executionWorkspaceId)
+        .filter((value): value is string => Boolean(value)),
+    );
+
+    const issues: ProjectFactoryRecoveryIssue[] = [];
+    const resumableExecutionIds = new Set<string>();
+    const orphanWorkspaceIds = new Set<string>();
+
+    for (const execution of executions) {
+      const workspace = execution.executionWorkspace ?? null;
+      const workspacePath = workspace?.providerRef ?? workspace?.cwd ?? execution.worktreePath ?? null;
+      const workspaceExists = await localPathExists(workspacePath);
+
+      if (!execution.executionWorkspaceId && (execution.status === "active" || execution.status === "failed" || execution.status === "completed")) {
+        issues.push({
+          kind: "missing_execution_workspace",
+          executionId: execution.id,
+          taskId: execution.taskId,
+          executionWorkspaceId: null,
+          workspaceName: execution.workspaceName,
+          workspaceStatus: null,
+          resumable: false,
+          message: `Execution ${execution.id} no longer has a linked execution workspace.`,
+        });
+      } else if (execution.executionWorkspaceId && !workspace) {
+        issues.push({
+          kind: "missing_execution_workspace",
+          executionId: execution.id,
+          taskId: execution.taskId,
+          executionWorkspaceId: execution.executionWorkspaceId,
+          workspaceName: execution.workspaceName,
+          workspaceStatus: null,
+          resumable: false,
+          message: `Execution ${execution.id} references a workspace that is missing from execution workspace state.`,
+        });
+      }
+
+      if (workspace?.status === "cleanup_failed") {
+        issues.push({
+          kind: "cleanup_failed_workspace",
+          executionId: execution.id,
+          taskId: execution.taskId,
+          executionWorkspaceId: workspace.id,
+          workspaceName: workspace.name,
+          workspaceStatus: workspace.status,
+          resumable: execution.status === "failed" && workspaceExists,
+          message: `Workspace ${workspace.name} is stuck in cleanup_failed state.`,
+        });
+      }
+
+      if (execution.status === "failed" && workspace && workspace.status !== "archived" && workspaceExists) {
+        resumableExecutionIds.add(execution.id);
+        issues.push({
+          kind: "resumable_execution",
+          executionId: execution.id,
+          taskId: execution.taskId,
+          executionWorkspaceId: workspace.id,
+          workspaceName: workspace.name,
+          workspaceStatus: workspace.status,
+          resumable: true,
+          message: `Execution ${execution.id} can be resumed because its workspace still exists.`,
+        });
+      }
+    }
+
+    for (const workspace of workspaces) {
+      if (referencedWorkspaceIds.has(workspace.id)) continue;
+      orphanWorkspaceIds.add(workspace.id);
+      issues.push({
+        kind: "orphan_execution_workspace",
+        executionId: null,
+        taskId: null,
+        executionWorkspaceId: workspace.id,
+        workspaceName: workspace.name,
+        workspaceStatus: workspace.status,
+        resumable: false,
+        message: `Workspace ${workspace.name} is not linked to a factory task execution.`,
+      });
+    }
+
+    return {
+      projectId: project.id,
+      issueCount: issues.length,
+      resumableExecutionCount: resumableExecutionIds.size,
+      orphanWorkspaceCount: orphanWorkspaceIds.size,
+      issues,
+    };
   }
 
   return {
@@ -1918,65 +2093,132 @@ export function projectFactoryService(db: Db) {
     },
 
     getReviewState: async (projectId: string): Promise<ProjectFactoryReviewState> => {
+      return await buildReviewState(projectId);
+    },
+
+    getRecoverySummary: async (projectId: string): Promise<ProjectFactoryRecoverySummary> => {
+      return await buildRecoverySummary(projectId);
+    },
+
+    getOperatorSummary: async (projectId: string): Promise<ProjectFactoryOperatorSummary> => {
       const project = await getProject(projectId);
-      const evaluations = await listGateEvaluationsInternal(project.id);
-      const reviews = await listExecutionReviewsInternal(project.id);
-
-      let manifestGates: FactoryProjectManifest["gates"] = DEFAULT_FACTORY_GATES;
-      try {
-        const manifest = await readCompiledManifest(project.id);
-        manifestGates = manifest.gates;
-      } catch {
-        manifestGates = DEFAULT_FACTORY_GATES;
-      }
-
-      const latestEvaluationByGateId = new Map<string, ProjectFactoryGateEvaluation>();
-      for (const evaluation of evaluations) {
-        const existing = latestEvaluationByGateId.get(evaluation.gateId);
-        if (!existing || existing.decidedAt < evaluation.decidedAt) {
-          latestEvaluationByGateId.set(evaluation.gateId, evaluation);
-        }
-      }
-
-      const gates: ProjectFactoryGateState[] = manifestGates.map((gate) => {
-        const latestEvaluation = latestEvaluationByGateId.get(gate.id) ?? null;
-        const defaultStatus = factoryGateStatusSchema.parse(gate.status);
-        const effectiveStatus = latestEvaluation
-          ? factoryGateStatusSchema.parse(latestEvaluation.status)
-          : defaultStatus;
-        return {
-          gateId: gate.id,
-          phaseId: gate.phaseId,
-          title: gate.title,
-          blocking: gate.blocking,
-          defaultStatus,
-          effectiveStatus,
-          latestEvaluation,
-        };
-      });
-
-      const summariesByExecutionId = new Map<string, ProjectFactoryExecutionReviewSummary>();
-      // Reviews are sorted desc; first occurrence per execution is latest.
-      for (const review of reviews) {
-        const existing = summariesByExecutionId.get(review.executionId);
-        if (existing) {
-          existing.reviewCount += 1;
-          continue;
-        }
-        summariesByExecutionId.set(review.executionId, {
-          executionId: review.executionId,
-          taskId: review.taskId,
-          reviewCount: 1,
-          latestVerdict: review.verdict,
-          latestReviewedAt: review.decidedAt,
-        });
-      }
+      const questions = await loadProjectQuestions(project.id);
+      const executions = await hydrateTaskExecutions(await listTaskExecutionRows(project.id));
+      const reviewState = await buildReviewState(project.id);
+      const recovery = await buildRecoverySummary(project.id);
+      const latestReviewByExecutionId = new Map(
+        reviewState.executionReviewSummaries.map((summary) => [summary.executionId, summary]),
+      );
 
       return {
         projectId: project.id,
-        gates,
-        evaluations,
-        executionReviewSummaries: Array.from(summariesByExecutionId.values()),
+        openQuestionCount: questions.filter((question) => question.status === "open").length,
+        blockingQuestionCount: questions.filter((question) => question.blocking && question.status !== "answered").length,
+        pendingGateCount: reviewState.gates.filter(
+          (gate) => gate.effectiveStatus === "pending" || gate.effectiveStatus === "ready",
+        ).length,
+        blockedGateCount: reviewState.gates.filter(
+          (gate) => gate.effectiveStatus === "blocked" || gate.effectiveStatus === "rejected",
+        ).length,
+        approvedGateCount: reviewState.gates.filter((gate) => gate.effectiveStatus === "approved").length,
+        pendingReviewCount: executions.filter((execution) => {
+          if (execution.status !== "completed") return false;
+          return latestReviewByExecutionId.get(execution.id)?.latestVerdict !== "approved";
+        }).length,
+        activeExecutionCount: executions.filter((execution) => execution.status === "active").length,
+        failedExecutionCount: executions.filter((execution) => execution.status === "failed").length,
+        recoveryIssueCount: recovery.issueCount,
+        resumableExecutionCount: recovery.resumableExecutionCount,
+        orphanWorkspaceCount: recovery.orphanWorkspaceCount,
+        recovery,
+      };
+    },
+
+    resumeTaskExecution: async (
+      projectId: string,
+      executionId: string,
+      input: { resumedByAgentId?: string | null; resumedByUserId?: string | null },
+    ): Promise<ProjectFactoryResumeTaskExecutionResult> => {
+      const existing = await loadTaskExecutionRow(projectId, executionId);
+      if (existing.status !== "failed") {
+        throw conflict("Only failed project factory task executions can be resumed", {
+          executionId: existing.id,
+          status: existing.status,
+        });
+      }
+      if (!existing.executionWorkspaceId) {
+        throw conflict("Failed project factory task execution has no workspace to resume", {
+          executionId: existing.id,
+        });
+      }
+
+      const workspace = await executionWorkspacesSvc.getById(existing.executionWorkspaceId);
+      if (!workspace) {
+        throw conflict("Failed project factory task execution workspace no longer exists", {
+          executionId: existing.id,
+          executionWorkspaceId: existing.executionWorkspaceId,
+        });
+      }
+      if (workspace.status === "archived") {
+        throw conflict("Archived execution workspaces cannot be resumed", {
+          executionId: existing.id,
+          executionWorkspaceId: workspace.id,
+        });
+      }
+
+      const workspacePath = workspace.providerRef ?? workspace.cwd ?? existing.worktreePath ?? null;
+      if (!(await localPathExists(workspacePath))) {
+        throw conflict("Failed project factory task execution workspace path no longer exists", {
+          executionId: existing.id,
+          executionWorkspaceId: workspace.id,
+          workspacePath,
+        });
+      }
+
+      const now = new Date();
+      const currentMetadata = (existing.metadata as Record<string, unknown> | null) ?? {};
+      const currentResumeCount = typeof currentMetadata.resumeCount === "number" ? currentMetadata.resumeCount : 0;
+      const nextMetadata = {
+        ...currentMetadata,
+        resumeCount: currentResumeCount + 1,
+        resumedAt: now.toISOString(),
+        resumedByAgentId: input.resumedByAgentId ?? null,
+        resumedByUserId: input.resumedByUserId ?? null,
+      };
+
+      const [executionRow] = await db
+        .update(projectFactoryTaskExecutions)
+        .set({
+          status: "active",
+          completionNotes: null,
+          completedAt: null,
+          archivedAt: null,
+          metadata: nextMetadata,
+          updatedAt: now,
+        })
+        .where(eq(projectFactoryTaskExecutions.id, existing.id))
+        .returning();
+
+      const executionWorkspace = await executionWorkspacesSvc.update(existing.executionWorkspaceId, {
+        status: "active",
+        closedAt: null,
+        cleanupReason: null,
+        lastUsedAt: now,
+      });
+      const execution = mapTaskExecutionRow(executionRow, executionWorkspace);
+      const { manifestKey } = await persistExecutionManifest(
+        projectId,
+        {
+          createdByAgentId: input.resumedByAgentId ?? null,
+          createdByUserId: input.resumedByUserId ?? null,
+        },
+        `Resumed execution ${execution.id}`,
+      );
+
+      return {
+        execution,
+        executionWorkspace,
+        executionManifestKey: manifestKey,
       };
     },
   };

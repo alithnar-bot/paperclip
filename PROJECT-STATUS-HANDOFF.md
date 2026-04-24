@@ -116,13 +116,13 @@ None of the above block the current branch from being resumed or reviewed.
 ## What to do next
 
 Most likely next step:
-1. start **Phase 5 — Recovery + Operator View**
+1. prepare and review the **Phase 5** follow-on PR
 
 Reasonable concrete follow-ons:
-- add resumability / retry handling for interrupted executions
-- detect orphaned or mismatched execution/workspace state
-- expose an operator summary for pending questions, reviews, gates, and recovery issues
-- prepare a PR from the Phase 4 follow-on branch
+- add richer board/UI surfaces for the operator summary
+- expand end-to-end bootstrap validation on real projects
+- tighten resume/recovery handling for additional interrupted execution states
+- consider a dedicated factory dashboard once the stacked PRs land
 
 ## Useful commands when resuming
 

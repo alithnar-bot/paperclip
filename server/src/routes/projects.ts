@@ -590,6 +590,72 @@ export function projectRoutes(db: Db) {
     res.json(evaluations);
   });
 
+  router.get("/projects/:id/factory/recovery", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const summary = await projectFactorySvc.getRecoverySummary(id);
+    res.json(summary);
+  });
+
+  router.get("/projects/:id/factory/operator-summary", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const summary = await projectFactorySvc.getOperatorSummary(id);
+    res.json(summary);
+  });
+
+  router.post(
+    "/projects/:id/factory/executions/:executionId/resume",
+    async (req, res) => {
+      const id = req.params.id as string;
+      const executionId = req.params.executionId as string;
+      const project = await svc.getById(id);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      assertCompanyAccess(req, project.companyId);
+      if (req.actor.type !== "board") {
+        res.status(403).json({ error: "Board authentication required" });
+        return;
+      }
+
+      const actor = getActorInfo(req);
+      const result = await projectFactorySvc.resumeTaskExecution(id, executionId, {
+        resumedByAgentId: actor.agentId ?? null,
+        resumedByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "project.factory_execution_resumed",
+        entityType: "project",
+        entityId: id,
+        details: {
+          executionId: result.execution.id,
+          taskId: result.execution.taskId,
+          executionWorkspaceId: result.execution.executionWorkspaceId,
+          executionManifestKey: result.executionManifestKey,
+        },
+      });
+
+      res.json(result);
+    },
+  );
+
   router.post(
     "/projects/:id/factory/gate-evaluations",
     validate(recordProjectFactoryGateEvaluationSchema),

@@ -285,3 +285,52 @@ export interface ProjectFactoryReviewState {
   evaluations: ProjectFactoryGateEvaluation[];
   executionReviewSummaries: ProjectFactoryExecutionReviewSummary[];
 }
+
+export const PROJECT_FACTORY_RECOVERY_ISSUE_KINDS = [
+  "resumable_execution",
+  "missing_execution_workspace",
+  "cleanup_failed_workspace",
+  "orphan_execution_workspace",
+] as const;
+export type ProjectFactoryRecoveryIssueKind = (typeof PROJECT_FACTORY_RECOVERY_ISSUE_KINDS)[number];
+
+export interface ProjectFactoryRecoveryIssue {
+  kind: ProjectFactoryRecoveryIssueKind;
+  executionId: string | null;
+  taskId: string | null;
+  executionWorkspaceId: string | null;
+  workspaceName: string | null;
+  workspaceStatus: ExecutionWorkspace["status"] | null;
+  resumable: boolean;
+  message: string;
+}
+
+export interface ProjectFactoryRecoverySummary {
+  projectId: string;
+  issueCount: number;
+  resumableExecutionCount: number;
+  orphanWorkspaceCount: number;
+  issues: ProjectFactoryRecoveryIssue[];
+}
+
+export interface ProjectFactoryOperatorSummary {
+  projectId: string;
+  openQuestionCount: number;
+  blockingQuestionCount: number;
+  pendingGateCount: number;
+  blockedGateCount: number;
+  approvedGateCount: number;
+  pendingReviewCount: number;
+  activeExecutionCount: number;
+  failedExecutionCount: number;
+  recoveryIssueCount: number;
+  resumableExecutionCount: number;
+  orphanWorkspaceCount: number;
+  recovery: ProjectFactoryRecoverySummary;
+}
+
+export interface ProjectFactoryResumeTaskExecutionResult {
+  execution: ProjectFactoryTaskExecution;
+  executionWorkspace: ExecutionWorkspace | null;
+  executionManifestKey: string;
+}

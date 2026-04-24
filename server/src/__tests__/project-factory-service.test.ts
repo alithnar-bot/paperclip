@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   companies,
@@ -652,5 +653,130 @@ describeEmbeddedPostgres("projectFactoryService", () => {
     );
     expect(summary?.latestVerdict).toBe("approved");
     expect(summary?.reviewCount).toBe(2);
+  });
+
+  it("summarizes recovery issues, exposes operator state, and resumes a failed execution", async () => {
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+    const repoDir = await createTempGitRepo("paperclip-project-factory-recovery-");
+    tempDirs.push(repoDir);
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(projects).values({ id: projectId, companyId, name: "Software Factory", status: "planned" });
+    await db.insert(projectWorkspaces).values({
+      companyId,
+      projectId,
+      name: "Primary repo",
+      sourceType: "local_path",
+      cwd: repoDir,
+      repoRef: "main",
+      defaultRef: "main",
+      isPrimary: true,
+    });
+    for (const [key, kind, title] of [
+      ["prd", "prd", "Factory PRD"],
+      ["tech-spec", "tech_spec", "Factory Tech Spec"],
+      ["architecture", "architecture", "Factory Architecture"],
+      ["decisions", "decisions", "Factory Decisions"],
+      ["implementation-plan", "implementation_plan", "Factory Implementation Plan"],
+      ["task-spec-bundle", "task_spec_bundle", "Factory Task Pack"],
+    ] as const) {
+      await svc.upsertProjectArtifact({
+        projectId,
+        key,
+        kind,
+        title,
+        format: "markdown",
+        body: `# ${title}`,
+        required: true,
+        sourcePath: `doc/factory/${title.replace(/ /g, "-")}.md`,
+        createdByUserId: "local-board",
+      });
+    }
+
+    await svc.compileProject(projectId, { createdByUserId: "local-board" });
+    await svc.recordGateEvaluation(projectId, {
+      gateId: "G1",
+      status: "approved",
+      summary: "G1 approved.",
+      decidedByUserId: "local-board",
+    });
+    await svc.createQuestion(projectId, {
+      text: "Should the operator summary show unresolved questions after compile?",
+      blocking: false,
+      createdByUserId: "local-board",
+    });
+
+    const launched = await svc.launchTaskExecution(projectId, {
+      taskId: "FS-05",
+      launchedByUserId: "local-board",
+    });
+    const interruptedAt = new Date();
+    await db
+      .update(projectFactoryTaskExecutions)
+      .set({
+        status: "failed",
+        completionNotes: "Interrupted before review.",
+        updatedAt: interruptedAt,
+      })
+      .where(eq(projectFactoryTaskExecutions.id, launched.execution.id));
+    await workspacesSvc.update(launched.execution.executionWorkspaceId!, {
+      status: "cleanup_failed",
+      closedAt: interruptedAt,
+      cleanupReason: "Interrupted cleanup",
+      lastUsedAt: interruptedAt,
+    });
+
+    const orphanPath = path.join(repoDir, ".paperclip", "orphan-workspace");
+    await fs.mkdir(orphanPath, { recursive: true });
+    await workspacesSvc.create({
+      companyId,
+      projectId,
+      projectWorkspaceId: launched.execution.projectWorkspaceId,
+      sourceIssueId: null,
+      mode: "isolated_workspace",
+      strategyType: "git_worktree",
+      name: "orphan workspace",
+      status: "idle",
+      cwd: orphanPath,
+      repoUrl: null,
+      baseRef: "main",
+      branchName: "factory/orphan-workspace",
+      providerType: "git_worktree",
+      providerRef: orphanPath,
+      metadata: { createdByRuntime: false },
+      lastUsedAt: interruptedAt,
+      openedAt: interruptedAt,
+    });
+
+    const recovery = await svc.getRecoverySummary(projectId);
+    expect(recovery.resumableExecutionCount).toBe(1);
+    expect(recovery.orphanWorkspaceCount).toBe(1);
+    expect(recovery.issues.map((issue) => issue.kind)).toEqual(
+      expect.arrayContaining(["resumable_execution", "cleanup_failed_workspace", "orphan_execution_workspace"]),
+    );
+
+    const operatorSummary = await svc.getOperatorSummary(projectId);
+    expect(operatorSummary.openQuestionCount).toBe(1);
+    expect(operatorSummary.pendingGateCount).toBeGreaterThan(0);
+    expect(operatorSummary.failedExecutionCount).toBe(1);
+    expect(operatorSummary.recoveryIssueCount).toBe(recovery.issueCount);
+
+    const resumed = await svc.resumeTaskExecution(projectId, launched.execution.id, {
+      resumedByUserId: "local-board",
+    });
+    expect(resumed.execution.status).toBe("active");
+    expect(resumed.executionWorkspace?.status).toBe("active");
+    expect((resumed.execution.metadata as Record<string, unknown> | null)?.resumeCount).toBe(1);
+    expect(typeof (resumed.execution.metadata as Record<string, unknown> | null)?.resumedAt).toBe("string");
+
+    const recoveryAfterResume = await svc.getRecoverySummary(projectId);
+    expect(recoveryAfterResume.resumableExecutionCount).toBe(0);
+    expect(recoveryAfterResume.orphanWorkspaceCount).toBe(1);
   });
 });

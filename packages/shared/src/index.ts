@@ -306,6 +306,11 @@ export type {
   ProjectFactoryGateState,
   ProjectFactoryExecutionReviewSummary,
   ProjectFactoryReviewState,
+  ProjectFactoryRecoveryIssueKind,
+  ProjectFactoryRecoveryIssue,
+  ProjectFactoryRecoverySummary,
+  ProjectFactoryOperatorSummary,
+  ProjectFactoryResumeTaskExecutionResult,
   FactoryManifestStatus,
   FactoryRiskLevel,
   FactoryMethodology,
@@ -543,6 +548,7 @@ export {
   PROJECT_FACTORY_TASK_EXECUTION_STATUSES,
   PROJECT_FACTORY_REVIEW_VERDICTS,
   PROJECT_FACTORY_GATE_EVALUATION_STATUSES,
+  PROJECT_FACTORY_RECOVERY_ISSUE_KINDS,
 } from "./types/project-factory.js";
 export {
   FACTORY_MANIFEST_STATUSES,

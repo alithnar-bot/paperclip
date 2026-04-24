@@ -94,12 +94,18 @@ export type {
   ProjectFactoryGateState,
   ProjectFactoryExecutionReviewSummary,
   ProjectFactoryReviewState,
+  ProjectFactoryRecoveryIssueKind,
+  ProjectFactoryRecoveryIssue,
+  ProjectFactoryRecoverySummary,
+  ProjectFactoryOperatorSummary,
+  ProjectFactoryResumeTaskExecutionResult,
 } from "./project-factory.js";
 export {
   PROJECT_FACTORY_ARTIFACT_FORMATS,
   PROJECT_FACTORY_TASK_EXECUTION_STATUSES,
   PROJECT_FACTORY_REVIEW_VERDICTS,
   PROJECT_FACTORY_GATE_EVALUATION_STATUSES,
+  PROJECT_FACTORY_RECOVERY_ISSUE_KINDS,
 } from "./project-factory.js";
 export {
   FACTORY_MANIFEST_STATUSES,

@@ -32,6 +32,9 @@ const mockProjectFactoryService = vi.hoisted(() => ({
   listGateEvaluations: vi.fn(),
   recordGateEvaluation: vi.fn(),
   getReviewState: vi.fn(),
+  getRecoverySummary: vi.fn(),
+  getOperatorSummary: vi.fn(),
+  resumeTaskExecution: vi.fn(),
 }));
 const mockSecretService = vi.hoisted(() => ({
   normalizeEnvBindingsForPersistence: vi.fn(),
@@ -717,5 +720,137 @@ describe("project factory routes", () => {
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(mockProjectFactoryService.listGateEvaluations).toHaveBeenCalledWith("project-1");
+  });
+
+  it("returns the project factory recovery summary", async () => {
+    mockProjectFactoryService.getRecoverySummary.mockResolvedValue({
+      projectId: "project-1",
+      issueCount: 2,
+      resumableExecutionCount: 1,
+      orphanWorkspaceCount: 1,
+      issues: [],
+    });
+
+    const app = await createApp();
+    const res = await request(app).get("/api/projects/project-1/factory/recovery");
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockProjectFactoryService.getRecoverySummary).toHaveBeenCalledWith("project-1");
+  });
+
+  it("returns the project factory operator summary", async () => {
+    mockProjectFactoryService.getOperatorSummary.mockResolvedValue({
+      projectId: "project-1",
+      openQuestionCount: 1,
+      blockingQuestionCount: 0,
+      pendingGateCount: 2,
+      blockedGateCount: 0,
+      approvedGateCount: 1,
+      pendingReviewCount: 0,
+      activeExecutionCount: 0,
+      failedExecutionCount: 1,
+      recoveryIssueCount: 2,
+      resumableExecutionCount: 1,
+      orphanWorkspaceCount: 1,
+      recovery: {
+        projectId: "project-1",
+        issueCount: 2,
+        resumableExecutionCount: 1,
+        orphanWorkspaceCount: 1,
+        issues: [],
+      },
+    });
+
+    const app = await createApp();
+    const res = await request(app).get("/api/projects/project-1/factory/operator-summary");
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockProjectFactoryService.getOperatorSummary).toHaveBeenCalledWith("project-1");
+  });
+
+  it("resumes a project factory task execution and logs the recovery action", async () => {
+    const now = new Date();
+    mockProjectFactoryService.resumeTaskExecution.mockResolvedValue({
+      execution: {
+        id: "execution-1",
+        companyId: "company-1",
+        projectId: "project-1",
+        taskId: "FS-05",
+        taskName: "Execution substrate and worktree manager",
+        taskSpecArtifactKey: "task-spec-fs-05",
+        status: "active",
+        executionWorkspaceId: "workspace-1",
+        projectWorkspaceId: "project-workspace-1",
+        workspaceMode: "isolated_workspace",
+        workspaceStrategyType: "git_worktree",
+        workspaceProviderType: "git_worktree",
+        workspaceName: "FS-05 workspace",
+        branchName: "factory/project-1/FS-05",
+        worktreePath: "/tmp/factory/project-1/FS-05",
+        completionMarker: "TASK_COMPLETED::FS-05",
+        completionNotes: null,
+        metadata: { resumeCount: 1, resumedAt: now.toISOString() },
+        launchedByAgentId: null,
+        launchedByUserId: "board-user",
+        completedByAgentId: null,
+        completedByUserId: null,
+        launchedAt: now,
+        completedAt: null,
+        archivedAt: null,
+        createdAt: now,
+        updatedAt: now,
+        executionWorkspace: null,
+      },
+      executionWorkspace: {
+        id: "workspace-1",
+        companyId: "company-1",
+        projectId: "project-1",
+        projectWorkspaceId: "project-workspace-1",
+        sourceIssueId: null,
+        derivedFromExecutionWorkspaceId: null,
+        mode: "isolated_workspace",
+        strategyType: "git_worktree",
+        name: "FS-05 workspace",
+        status: "active",
+        cwd: "/tmp/factory/project-1/FS-05",
+        repoUrl: null,
+        baseRef: "main",
+        branchName: "factory/project-1/FS-05",
+        providerType: "git_worktree",
+        providerRef: "/tmp/factory/project-1/FS-05",
+        config: null,
+        metadata: null,
+        lastUsedAt: now,
+        openedAt: now,
+        cleanupEligibleAt: null,
+        closedAt: null,
+        cleanupReason: null,
+        runtimeServices: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+      executionManifestKey: "execution-manifest",
+    });
+
+    const app = await createApp();
+    const res = await request(app).post("/api/projects/project-1/factory/executions/execution-1/resume").send({});
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockProjectFactoryService.resumeTaskExecution).toHaveBeenCalledWith(
+      "project-1",
+      "execution-1",
+      expect.objectContaining({ resumedByUserId: "board-user" }),
+    );
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "project.factory_execution_resumed",
+        details: expect.objectContaining({
+          executionId: "execution-1",
+          taskId: "FS-05",
+          executionWorkspaceId: "workspace-1",
+        }),
+      }),
+    );
   });
 });
