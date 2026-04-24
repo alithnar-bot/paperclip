@@ -25,6 +25,8 @@ export { projectDocuments } from "./project_documents.js";
 export { projectFactoryQuestions } from "./project_factory_questions.js";
 export { projectFactoryDecisions } from "./project_factory_decisions.js";
 export { projectFactoryTaskExecutions } from "./project_factory_task_executions.js";
+export { projectFactoryReviews } from "./project_factory_reviews.js";
+export { projectFactoryGateEvaluations } from "./project_factory_gate_evaluations.js";
 export { executionWorkspaces } from "./execution_workspaces.js";
 export { environments } from "./environments.js";
 export { environmentLeases } from "./environment_leases.js";

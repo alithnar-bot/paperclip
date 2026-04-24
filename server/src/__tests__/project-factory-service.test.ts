@@ -11,7 +11,10 @@ import {
   documents,
   executionWorkspaces,
   projectFactoryDecisions,
+  projectFactoryGateEvaluations,
   projectFactoryQuestions,
+  projectFactoryReviews,
+  projectFactoryTaskExecutions,
   projectDocuments,
   projectWorkspaces,
   projects,
@@ -68,6 +71,9 @@ describeEmbeddedPostgres("projectFactoryService", () => {
   }, 20_000);
 
   afterEach(async () => {
+    await db.delete(projectFactoryReviews);
+    await db.delete(projectFactoryGateEvaluations);
+    await db.delete(projectFactoryTaskExecutions);
     await db.delete(projectFactoryDecisions);
     await db.delete(projectFactoryQuestions);
     await db.delete(projectDocuments);
@@ -319,6 +325,13 @@ describeEmbeddedPostgres("projectFactoryService", () => {
       createdByUserId: "local-board",
     });
 
+    await svc.recordGateEvaluation(projectId, {
+      gateId: "G1",
+      status: "approved",
+      summary: "Compilation outputs verified.",
+      decidedByUserId: "local-board",
+    });
+
     const launched = await svc.launchTaskExecution(projectId, {
       taskId: "FS-05",
       launchedByUserId: "local-board",
@@ -393,5 +406,251 @@ describeEmbeddedPostgres("projectFactoryService", () => {
     expect(archivedWorkspace?.status).toBe("archived");
     expect(archivedWorkspace?.closedAt).toBeTruthy();
     expect(primaryWorkspace.cwd).toBe(repoDir);
+  });
+
+  it("blocks downstream task execution when an upstream blocking gate is not approved and unblocks once approved", async () => {
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+    const repoDir = await createTempGitRepo("paperclip-project-factory-gate-block-");
+    tempDirs.push(repoDir);
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(projects).values({
+      id: projectId,
+      companyId,
+      name: "Software Factory",
+      status: "planned",
+    });
+
+    await db.insert(projectWorkspaces).values({
+      companyId,
+      projectId,
+      name: "Primary repo",
+      sourceType: "local_path",
+      cwd: repoDir,
+      repoRef: "main",
+      defaultRef: "main",
+      isPrimary: true,
+    });
+
+    for (const [key, kind, title] of [
+      ["prd", "prd", "Factory PRD"],
+      ["tech-spec", "tech_spec", "Factory Tech Spec"],
+      ["architecture", "architecture", "Factory Architecture"],
+      ["decisions", "decisions", "Factory Decisions"],
+      ["implementation-plan", "implementation_plan", "Factory Implementation Plan"],
+      ["task-spec-bundle", "task_spec_bundle", "Factory Task Pack"],
+    ] as const) {
+      await svc.upsertProjectArtifact({
+        projectId,
+        key,
+        kind,
+        title,
+        format: "markdown",
+        body: `# ${title}`,
+        required: true,
+        sourcePath: `doc/factory/${title.replace(/ /g, "-")}.md`,
+        createdByUserId: "local-board",
+      });
+    }
+    await svc.compileProject(projectId, { createdByUserId: "local-board" });
+
+    await expect(
+      svc.launchTaskExecution(projectId, { taskId: "FS-05", launchedByUserId: "local-board" }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    const rejected = await svc.recordGateEvaluation(projectId, {
+      gateId: "G1",
+      status: "rejected",
+      summary: "Architecture decisions still incomplete.",
+      decidedByUserId: "local-board",
+    });
+    expect(rejected.status).toBe("rejected");
+
+    await expect(
+      svc.launchTaskExecution(projectId, { taskId: "FS-05", launchedByUserId: "local-board" }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    const approved = await svc.recordGateEvaluation(projectId, {
+      gateId: "G1",
+      status: "approved",
+      summary: "Decisions resolved; G1 approved.",
+      decidedByUserId: "local-board",
+    });
+    expect(approved.status).toBe("approved");
+
+    const launched = await svc.launchTaskExecution(projectId, {
+      taskId: "FS-05",
+      launchedByUserId: "local-board",
+    });
+    expect(launched.execution.status).toBe("active");
+
+    const reviewState = await svc.getReviewState(projectId);
+    const g1 = reviewState.gates.find((gate) => gate.gateId === "G1");
+    expect(g1?.effectiveStatus).toBe("approved");
+    expect(g1?.latestEvaluation?.id).toBe(approved.id);
+    expect(reviewState.evaluations.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("blocks downstream task execution when a predecessor task has not completed", async () => {
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+    const repoDir = await createTempGitRepo("paperclip-project-factory-predecessor-");
+    tempDirs.push(repoDir);
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(projects).values({ id: projectId, companyId, name: "Software Factory", status: "planned" });
+    await db.insert(projectWorkspaces).values({
+      companyId,
+      projectId,
+      name: "Primary repo",
+      sourceType: "local_path",
+      cwd: repoDir,
+      repoRef: "main",
+      defaultRef: "main",
+      isPrimary: true,
+    });
+    for (const [key, kind, title] of [
+      ["prd", "prd", "Factory PRD"],
+      ["tech-spec", "tech_spec", "Factory Tech Spec"],
+      ["architecture", "architecture", "Factory Architecture"],
+      ["decisions", "decisions", "Factory Decisions"],
+      ["implementation-plan", "implementation_plan", "Factory Implementation Plan"],
+      ["task-spec-bundle", "task_spec_bundle", "Factory Task Pack"],
+    ] as const) {
+      await svc.upsertProjectArtifact({
+        projectId,
+        key,
+        kind,
+        title,
+        format: "markdown",
+        body: `# ${title}`,
+        required: true,
+        sourcePath: `doc/factory/${title.replace(/ /g, "-")}.md`,
+        createdByUserId: "local-board",
+      });
+    }
+    await svc.compileProject(projectId, { createdByUserId: "local-board" });
+    await svc.recordGateEvaluation(projectId, {
+      gateId: "G1",
+      status: "approved",
+      summary: "G1 approved.",
+      decidedByUserId: "local-board",
+    });
+
+    // FS-06 depends on FS-04 and FS-05; neither has completed.
+    await expect(
+      svc.launchTaskExecution(projectId, { taskId: "FS-06", launchedByUserId: "local-board" }),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("records review verdicts for a completed task execution and exposes them via review state", async () => {
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+    const repoDir = await createTempGitRepo("paperclip-project-factory-review-");
+    tempDirs.push(repoDir);
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(projects).values({ id: projectId, companyId, name: "Software Factory", status: "planned" });
+    await db.insert(projectWorkspaces).values({
+      companyId,
+      projectId,
+      name: "Primary repo",
+      sourceType: "local_path",
+      cwd: repoDir,
+      repoRef: "main",
+      defaultRef: "main",
+      isPrimary: true,
+    });
+    for (const [key, kind, title] of [
+      ["prd", "prd", "Factory PRD"],
+      ["tech-spec", "tech_spec", "Factory Tech Spec"],
+      ["architecture", "architecture", "Factory Architecture"],
+      ["decisions", "decisions", "Factory Decisions"],
+      ["implementation-plan", "implementation_plan", "Factory Implementation Plan"],
+      ["task-spec-bundle", "task_spec_bundle", "Factory Task Pack"],
+    ] as const) {
+      await svc.upsertProjectArtifact({
+        projectId,
+        key,
+        kind,
+        title,
+        format: "markdown",
+        body: `# ${title}`,
+        required: true,
+        sourcePath: `doc/factory/${title.replace(/ /g, "-")}.md`,
+        createdByUserId: "local-board",
+      });
+    }
+    await svc.compileProject(projectId, { createdByUserId: "local-board" });
+    await svc.recordGateEvaluation(projectId, {
+      gateId: "G1",
+      status: "approved",
+      summary: "G1 approved.",
+      decidedByUserId: "local-board",
+    });
+
+    const launched = await svc.launchTaskExecution(projectId, {
+      taskId: "FS-05",
+      launchedByUserId: "local-board",
+    });
+    await svc.markTaskExecutionCompleted(projectId, launched.execution.id, {
+      completionMarker: launched.execution.completionMarker,
+      completedByUserId: "local-board",
+    });
+
+    // Cannot review a not-yet-existing execution.
+    await expect(
+      svc.recordExecutionReview(projectId, randomUUID(), {
+        verdict: "approved",
+        summary: "n/a",
+        decidedByUserId: "local-board",
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+
+    const requestChanges = await svc.recordExecutionReview(projectId, launched.execution.id, {
+      verdict: "changes_requested",
+      summary: "Please rerun the worktree teardown smoke check.",
+      decidedByUserId: "local-board",
+    });
+    expect(requestChanges.verdict).toBe("changes_requested");
+    expect(requestChanges.executionId).toBe(launched.execution.id);
+    expect(requestChanges.decidedByUserId).toBe("local-board");
+
+    const approve = await svc.recordExecutionReview(projectId, launched.execution.id, {
+      verdict: "approved",
+      summary: "Worktree lifecycle verified.",
+      decidedByUserId: "local-board",
+    });
+    expect(approve.verdict).toBe("approved");
+
+    const reviews = await svc.listExecutionReviews(projectId);
+    expect(reviews).toHaveLength(2);
+    // Expect newest first.
+    expect(reviews[0]?.verdict).toBe("approved");
+    expect(reviews[1]?.verdict).toBe("changes_requested");
+
+    const reviewState = await svc.getReviewState(projectId);
+    const summary = reviewState.executionReviewSummaries.find(
+      (entry) => entry.executionId === launched.execution.id,
+    );
+    expect(summary?.latestVerdict).toBe("approved");
+    expect(summary?.reviewCount).toBe(2);
   });
 });

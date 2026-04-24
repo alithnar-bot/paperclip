@@ -160,6 +160,11 @@ export {
   launchProjectFactoryTaskExecutionSchema,
   completeProjectFactoryTaskExecutionSchema,
   archiveProjectFactoryTaskExecutionSchema,
+  projectFactoryGateIdSchema,
+  projectFactoryReviewVerdictSchema,
+  projectFactoryGateEvaluationStatusSchema,
+  recordProjectFactoryExecutionReviewSchema,
+  recordProjectFactoryGateEvaluationSchema,
   type UpsertProjectFactoryArtifact,
   type CreateProjectFactoryQuestion,
   type CreateProjectFactoryDecision,
@@ -167,6 +172,8 @@ export {
   type LaunchProjectFactoryTaskExecution,
   type CompleteProjectFactoryTaskExecution,
   type ArchiveProjectFactoryTaskExecution,
+  type RecordProjectFactoryExecutionReview,
+  type RecordProjectFactoryGateEvaluation,
 } from "./project-factory.js";
 
 export {

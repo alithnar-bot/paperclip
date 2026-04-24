@@ -7,6 +7,8 @@ import {
 } from "../types/factory.js";
 import {
   PROJECT_FACTORY_ARTIFACT_FORMATS,
+  PROJECT_FACTORY_GATE_EVALUATION_STATUSES,
+  PROJECT_FACTORY_REVIEW_VERDICTS,
   PROJECT_FACTORY_TASK_EXECUTION_STATUSES,
 } from "../types/project-factory.js";
 
@@ -91,3 +93,29 @@ export const archiveProjectFactoryTaskExecutionSchema = z.object({
 });
 
 export type ArchiveProjectFactoryTaskExecution = z.infer<typeof archiveProjectFactoryTaskExecutionSchema>;
+
+export const projectFactoryGateIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, "Gate ID must be letters, numbers, _ or -");
+
+export const projectFactoryReviewVerdictSchema = z.enum(PROJECT_FACTORY_REVIEW_VERDICTS);
+export const projectFactoryGateEvaluationStatusSchema = z.enum(PROJECT_FACTORY_GATE_EVALUATION_STATUSES);
+
+export const recordProjectFactoryExecutionReviewSchema = z.object({
+  verdict: projectFactoryReviewVerdictSchema,
+  summary: z.string().trim().min(1).max(4000),
+});
+
+export type RecordProjectFactoryExecutionReview = z.infer<typeof recordProjectFactoryExecutionReviewSchema>;
+
+export const recordProjectFactoryGateEvaluationSchema = z.object({
+  gateId: projectFactoryGateIdSchema,
+  status: projectFactoryGateEvaluationStatusSchema,
+  summary: z.string().trim().min(1).max(4000),
+  phaseId: z.string().trim().max(64).nullable().optional(),
+});
+
+export type RecordProjectFactoryGateEvaluation = z.infer<typeof recordProjectFactoryGateEvaluationSchema>;

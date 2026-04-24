@@ -74,9 +74,18 @@ Implemented inside the fork today:
   - generated `project-json` artifact
   - generated task-spec bundle README
   - generated `task-spec-fs-00` through `task-spec-fs-07` artifacts
+- **Phase 3 — Execution Substrate**
+  - task execution persistence
+  - execution manifest generation
+  - worktree launch-pack writing
+  - execution launch / complete / archive routes
+- **Phase 4 — Review + Gates**
+  - persisted execution review verdicts
+  - persisted gate evaluations
+  - review-state summary surface
+  - launch blocking on upstream gates and relevant predecessor execution tasks
 
 Still pending:
 
-- execution substrate
-- review + gates persistence beyond readiness scaffolding
 - recovery / operator summary surfaces
+- resumability and orphan detection

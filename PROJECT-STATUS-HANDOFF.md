@@ -116,13 +116,13 @@ None of the above block the current branch from being resumed or reviewed.
 ## What to do next
 
 Most likely next step:
-1. start **Phase 4 — Review + Gates**
+1. start **Phase 5 — Recovery + Operator View**
 
 Reasonable concrete follow-ons:
-- persist review packets / verdicts
-- add gate-evaluation state beyond readiness scaffolding
-- enforce phase/gate blocking on execution progression
-- prepare a PR from this branch
+- add resumability / retry handling for interrupted executions
+- detect orphaned or mismatched execution/workspace state
+- expose an operator summary for pending questions, reviews, gates, and recovery issues
+- prepare a PR from the Phase 4 follow-on branch
 
 ## Useful commands when resuming
 
