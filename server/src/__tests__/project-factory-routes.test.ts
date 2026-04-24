@@ -27,6 +27,11 @@ const mockProjectFactoryService = vi.hoisted(() => ({
   launchTaskExecution: vi.fn(),
   markTaskExecutionCompleted: vi.fn(),
   archiveTaskExecution: vi.fn(),
+  listExecutionReviews: vi.fn(),
+  recordExecutionReview: vi.fn(),
+  listGateEvaluations: vi.fn(),
+  recordGateEvaluation: vi.fn(),
+  getReviewState: vi.fn(),
 }));
 const mockSecretService = vi.hoisted(() => ({
   normalizeEnvBindingsForPersistence: vi.fn(),
@@ -570,5 +575,147 @@ describe("project factory routes", () => {
         }),
       }),
     );
+  });
+
+  it("returns the project factory review state", async () => {
+    mockProjectFactoryService.getReviewState.mockResolvedValue({
+      projectId: "project-1",
+      gates: [
+        {
+          gateId: "G1",
+          phaseId: "P2",
+          title: "Clarification + compilation ready",
+          blocking: true,
+          defaultStatus: "ready",
+          effectiveStatus: "approved",
+          latestEvaluation: { id: "gate-eval-1", status: "approved" },
+        },
+      ],
+      evaluations: [],
+      executionReviewSummaries: [
+        {
+          executionId: "execution-1",
+          taskId: "FS-05",
+          reviewCount: 1,
+          latestVerdict: "approved",
+        },
+      ],
+    });
+
+    const app = await createApp();
+    const res = await request(app).get("/api/projects/project-1/factory/review-state");
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockProjectFactoryService.getReviewState).toHaveBeenCalledWith("project-1");
+  });
+
+  it("records a project factory execution review and logs the verdict", async () => {
+    const now = new Date();
+    mockProjectFactoryService.recordExecutionReview.mockResolvedValue({
+      id: "review-1",
+      companyId: "company-1",
+      projectId: "project-1",
+      executionId: "execution-1",
+      taskId: "FS-05",
+      verdict: "approved",
+      summary: "Worktree lifecycle verified.",
+      decidedByAgentId: null,
+      decidedByUserId: "board-user",
+      decidedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const app = await createApp();
+    const res = await request(app)
+      .post("/api/projects/project-1/factory/executions/execution-1/reviews")
+      .send({ verdict: "approved", summary: "Worktree lifecycle verified." });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(mockProjectFactoryService.recordExecutionReview).toHaveBeenCalledWith(
+      "project-1",
+      "execution-1",
+      expect.objectContaining({
+        verdict: "approved",
+        summary: "Worktree lifecycle verified.",
+        decidedByUserId: "board-user",
+      }),
+    );
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "project.factory_execution_reviewed",
+        details: expect.objectContaining({
+          executionId: "execution-1",
+          reviewId: "review-1",
+          verdict: "approved",
+        }),
+      }),
+    );
+  });
+
+  it("lists project factory execution reviews", async () => {
+    mockProjectFactoryService.listExecutionReviews.mockResolvedValue([]);
+
+    const app = await createApp();
+    const res = await request(app).get("/api/projects/project-1/factory/reviews");
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockProjectFactoryService.listExecutionReviews).toHaveBeenCalledWith("project-1");
+  });
+
+  it("records a project factory gate evaluation and logs the verdict", async () => {
+    const now = new Date();
+    mockProjectFactoryService.recordGateEvaluation.mockResolvedValue({
+      id: "gate-eval-1",
+      companyId: "company-1",
+      projectId: "project-1",
+      gateId: "G1",
+      phaseId: "P2",
+      status: "approved",
+      summary: "Decisions resolved.",
+      decidedByAgentId: null,
+      decidedByUserId: "board-user",
+      decidedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const app = await createApp();
+    const res = await request(app)
+      .post("/api/projects/project-1/factory/gate-evaluations")
+      .send({ gateId: "G1", status: "approved", summary: "Decisions resolved." });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(mockProjectFactoryService.recordGateEvaluation).toHaveBeenCalledWith(
+      "project-1",
+      expect.objectContaining({
+        gateId: "G1",
+        status: "approved",
+        summary: "Decisions resolved.",
+        decidedByUserId: "board-user",
+      }),
+    );
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "project.factory_gate_evaluated",
+        details: expect.objectContaining({
+          gateId: "G1",
+          status: "approved",
+          evaluationId: "gate-eval-1",
+        }),
+      }),
+    );
+  });
+
+  it("lists project factory gate evaluations", async () => {
+    mockProjectFactoryService.listGateEvaluations.mockResolvedValue([]);
+
+    const app = await createApp();
+    const res = await request(app).get("/api/projects/project-1/factory/gate-evaluations");
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockProjectFactoryService.listGateEvaluations).toHaveBeenCalledWith("project-1");
   });
 });

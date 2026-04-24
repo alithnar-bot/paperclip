@@ -3,6 +3,7 @@ import type {
   FactoryDecisionActor,
   FactoryDecisionStatus,
   FactoryDecisionType,
+  FactoryGateStatus,
   FactoryProjectManifest,
   FactoryQuestionStatus,
 } from "./factory.js";
@@ -211,4 +212,76 @@ export interface ProjectFactoryArchiveTaskExecutionResult {
   executionWorkspace: ExecutionWorkspace | null;
   cleanup: ProjectFactoryExecutionCleanupResult | null;
   executionManifestKey: string;
+}
+
+export const PROJECT_FACTORY_REVIEW_VERDICTS = [
+  "pending",
+  "approved",
+  "changes_requested",
+  "rejected",
+] as const;
+export type ProjectFactoryReviewVerdict = (typeof PROJECT_FACTORY_REVIEW_VERDICTS)[number];
+
+export interface ProjectFactoryExecutionReview {
+  id: string;
+  companyId: string;
+  projectId: string;
+  executionId: string;
+  taskId: string;
+  verdict: ProjectFactoryReviewVerdict;
+  summary: string;
+  decidedByAgentId: string | null;
+  decidedByUserId: string | null;
+  decidedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export const PROJECT_FACTORY_GATE_EVALUATION_STATUSES = [
+  "pending",
+  "ready",
+  "approved",
+  "rejected",
+  "blocked",
+] as const;
+export type ProjectFactoryGateEvaluationStatus = (typeof PROJECT_FACTORY_GATE_EVALUATION_STATUSES)[number];
+
+export interface ProjectFactoryGateEvaluation {
+  id: string;
+  companyId: string;
+  projectId: string;
+  gateId: string;
+  phaseId: string | null;
+  status: ProjectFactoryGateEvaluationStatus;
+  summary: string;
+  decidedByAgentId: string | null;
+  decidedByUserId: string | null;
+  decidedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ProjectFactoryGateState {
+  gateId: string;
+  phaseId: string;
+  title: string;
+  blocking: boolean;
+  defaultStatus: FactoryGateStatus;
+  effectiveStatus: FactoryGateStatus;
+  latestEvaluation: ProjectFactoryGateEvaluation | null;
+}
+
+export interface ProjectFactoryExecutionReviewSummary {
+  executionId: string;
+  taskId: string;
+  reviewCount: number;
+  latestVerdict: ProjectFactoryReviewVerdict | null;
+  latestReviewedAt: Date | null;
+}
+
+export interface ProjectFactoryReviewState {
+  projectId: string;
+  gates: ProjectFactoryGateState[];
+  evaluations: ProjectFactoryGateEvaluation[];
+  executionReviewSummaries: ProjectFactoryExecutionReviewSummary[];
 }

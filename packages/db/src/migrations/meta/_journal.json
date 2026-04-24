@@ -498,6 +498,13 @@
       "when": 1777023487074,
       "tag": "0070_cheerful_roland_deschain",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1777028312710,
+      "tag": "0071_moaning_black_bolt",
+      "breakpoints": true
     }
   ]
 }

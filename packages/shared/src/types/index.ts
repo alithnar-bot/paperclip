@@ -87,10 +87,19 @@ export type {
   ProjectFactoryLaunchTaskExecutionResult,
   ProjectFactoryCompleteTaskExecutionResult,
   ProjectFactoryArchiveTaskExecutionResult,
+  ProjectFactoryExecutionReview,
+  ProjectFactoryReviewVerdict,
+  ProjectFactoryGateEvaluation,
+  ProjectFactoryGateEvaluationStatus,
+  ProjectFactoryGateState,
+  ProjectFactoryExecutionReviewSummary,
+  ProjectFactoryReviewState,
 } from "./project-factory.js";
 export {
   PROJECT_FACTORY_ARTIFACT_FORMATS,
   PROJECT_FACTORY_TASK_EXECUTION_STATUSES,
+  PROJECT_FACTORY_REVIEW_VERDICTS,
+  PROJECT_FACTORY_GATE_EVALUATION_STATUSES,
 } from "./project-factory.js";
 export {
   FACTORY_MANIFEST_STATUSES,

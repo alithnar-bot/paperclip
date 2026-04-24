@@ -11,6 +11,8 @@ import {
   isUuidLike,
   launchProjectFactoryTaskExecutionSchema,
   matchWorkspaceRuntimeServiceToCommand,
+  recordProjectFactoryExecutionReviewSchema,
+  recordProjectFactoryGateEvaluationSchema,
   upsertProjectFactoryArtifactSchema,
   updateProjectSchema,
   updateProjectWorkspaceSchema,
@@ -504,6 +506,133 @@ export function projectRoutes(db: Db) {
       });
 
       res.json(result);
+    },
+  );
+
+  router.get("/projects/:id/factory/review-state", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const reviewState = await projectFactorySvc.getReviewState(id);
+    res.json(reviewState);
+  });
+
+  router.get("/projects/:id/factory/reviews", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const reviews = await projectFactorySvc.listExecutionReviews(id);
+    res.json(reviews);
+  });
+
+  router.post(
+    "/projects/:id/factory/executions/:executionId/reviews",
+    validate(recordProjectFactoryExecutionReviewSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const executionId = req.params.executionId as string;
+      const project = await svc.getById(id);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      assertCompanyAccess(req, project.companyId);
+      if (req.actor.type !== "board") {
+        res.status(403).json({ error: "Board authentication required" });
+        return;
+      }
+
+      const actor = getActorInfo(req);
+      const review = await projectFactorySvc.recordExecutionReview(id, executionId, {
+        verdict: req.body.verdict,
+        summary: req.body.summary,
+        decidedByAgentId: actor.agentId ?? null,
+        decidedByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "project.factory_execution_reviewed",
+        entityType: "project",
+        entityId: id,
+        details: {
+          executionId: review.executionId,
+          taskId: review.taskId,
+          reviewId: review.id,
+          verdict: review.verdict,
+        },
+      });
+
+      res.status(201).json(review);
+    },
+  );
+
+  router.get("/projects/:id/factory/gate-evaluations", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const evaluations = await projectFactorySvc.listGateEvaluations(id);
+    res.json(evaluations);
+  });
+
+  router.post(
+    "/projects/:id/factory/gate-evaluations",
+    validate(recordProjectFactoryGateEvaluationSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const project = await svc.getById(id);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      assertCompanyAccess(req, project.companyId);
+      if (req.actor.type !== "board") {
+        res.status(403).json({ error: "Board authentication required" });
+        return;
+      }
+
+      const actor = getActorInfo(req);
+      const evaluation = await projectFactorySvc.recordGateEvaluation(id, {
+        gateId: req.body.gateId,
+        status: req.body.status,
+        summary: req.body.summary,
+        phaseId: req.body.phaseId ?? null,
+        decidedByAgentId: actor.agentId ?? null,
+        decidedByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "project.factory_gate_evaluated",
+        entityType: "project",
+        entityId: id,
+        details: {
+          evaluationId: evaluation.id,
+          gateId: evaluation.gateId,
+          phaseId: evaluation.phaseId,
+          status: evaluation.status,
+        },
+      });
+
+      res.status(201).json(evaluation);
     },
   );
 

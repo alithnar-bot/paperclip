@@ -8,7 +8,9 @@ import {
   executionWorkspaces,
   projectDocuments,
   projectFactoryDecisions,
+  projectFactoryGateEvaluations,
   projectFactoryQuestions,
+  projectFactoryReviews,
   projectFactoryTaskExecutions,
   projects,
   projectWorkspaces,
@@ -16,6 +18,7 @@ import {
 import type {
   AnswerProjectFactoryQuestionResult,
   ExecutionWorkspace,
+  FactoryGateState,
   FactoryProjectManifest,
   ProjectFactoryArchiveTaskExecutionResult,
   ProjectFactoryArtifact,
@@ -26,19 +29,30 @@ import type {
   ProjectFactoryExecutionCleanupResult,
   ProjectFactoryExecutionManifest,
   ProjectFactoryExecutionManifestExecution,
+  ProjectFactoryExecutionReview,
+  ProjectFactoryExecutionReviewSummary,
+  ProjectFactoryGateEvaluation,
+  ProjectFactoryGateEvaluationStatus,
+  ProjectFactoryGateState,
   ProjectFactoryIntakeSummary,
   ProjectFactoryLaunchTaskExecutionResult,
   ProjectFactoryMissingContextCandidate,
   ProjectFactoryQuestion,
+  ProjectFactoryReviewState,
+  ProjectFactoryReviewVerdict,
   ProjectFactoryTaskExecution,
 } from "@paperclipai/shared";
 import {
   factoryDecisionStatusSchema,
+  factoryGateStatusSchema,
   factoryProjectManifestSchema,
   projectFactoryArtifactKeySchema,
   projectFactoryDecisionActorSchema,
   projectFactoryDecisionTypeSchema,
+  projectFactoryGateEvaluationStatusSchema,
+  projectFactoryGateIdSchema,
   projectFactoryQuestionStatusSchema,
+  projectFactoryReviewVerdictSchema,
   projectFactoryTaskExecutionStatusSchema,
   projectFactoryTaskIdSchema,
 } from "@paperclipai/shared";
@@ -493,6 +507,42 @@ function buildTaskSpecMarkdown(args: {
 
 type ProjectFactoryTaskExecutionRow = typeof projectFactoryTaskExecutions.$inferSelect;
 
+function mapReviewRow(row: typeof projectFactoryReviews.$inferSelect): ProjectFactoryExecutionReview {
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    projectId: row.projectId,
+    executionId: row.executionId,
+    taskId: row.taskId,
+    verdict: projectFactoryReviewVerdictSchema.parse(row.verdict),
+    summary: row.summary,
+    decidedByAgentId: row.decidedByAgentId ?? null,
+    decidedByUserId: row.decidedByUserId ?? null,
+    decidedAt: row.decidedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function mapGateEvaluationRow(
+  row: typeof projectFactoryGateEvaluations.$inferSelect,
+): ProjectFactoryGateEvaluation {
+  return {
+    id: row.id,
+    companyId: row.companyId,
+    projectId: row.projectId,
+    gateId: row.gateId,
+    phaseId: row.phaseId ?? null,
+    status: projectFactoryGateEvaluationStatusSchema.parse(row.status),
+    summary: row.summary,
+    decidedByAgentId: row.decidedByAgentId ?? null,
+    decidedByUserId: row.decidedByUserId ?? null,
+    decidedAt: row.decidedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
 function mapTaskExecutionRow(
   row: ProjectFactoryTaskExecutionRow,
   executionWorkspace: ExecutionWorkspace | null = null,
@@ -585,9 +635,56 @@ function buildExecutionManifest(args: {
   };
 }
 
+function gateStatusToEffective(status: ProjectFactoryGateEvaluationStatus): FactoryGateState["status"] {
+  return status;
+}
+
+function computeBlockingUpstreamGates(args: {
+  manifest: FactoryProjectManifest;
+  taskPhaseId: string;
+  evaluations: ProjectFactoryGateEvaluation[];
+}): Array<{ gateId: string; phaseId: string; effectiveStatus: FactoryGateState["status"] }> {
+  const latestEvaluationByGateId = new Map<string, ProjectFactoryGateEvaluation>();
+  for (const evaluation of args.evaluations) {
+    const existing = latestEvaluationByGateId.get(evaluation.gateId);
+    if (!existing || existing.decidedAt < evaluation.decidedAt) {
+      latestEvaluationByGateId.set(evaluation.gateId, evaluation);
+    }
+  }
+  return args.manifest.gates
+    .filter((gate) => gate.blocking && gate.phaseId < args.taskPhaseId)
+    .map((gate) => {
+      const latest = latestEvaluationByGateId.get(gate.id);
+      const effectiveStatus = latest ? gateStatusToEffective(latest.status) : gate.status;
+      return {
+        gateId: gate.id,
+        phaseId: gate.phaseId,
+        effectiveStatus,
+      };
+    });
+}
+
 export function projectFactoryService(db: Db) {
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperations = workspaceOperationService(db);
+
+  async function listGateEvaluationsInternal(projectId: string) {
+    const rows = await db
+      .select()
+      .from(projectFactoryGateEvaluations)
+      .where(eq(projectFactoryGateEvaluations.projectId, projectId))
+      .orderBy(desc(projectFactoryGateEvaluations.decidedAt), desc(projectFactoryGateEvaluations.createdAt));
+    return rows.map(mapGateEvaluationRow);
+  }
+
+  async function listExecutionReviewsInternal(projectId: string) {
+    const rows = await db
+      .select()
+      .from(projectFactoryReviews)
+      .where(eq(projectFactoryReviews.projectId, projectId))
+      .orderBy(desc(projectFactoryReviews.decidedAt), desc(projectFactoryReviews.createdAt));
+    return rows.map(mapReviewRow);
+  }
 
   async function getProject(projectId: string) {
     const project = await db
@@ -1146,13 +1243,52 @@ export function projectFactoryService(db: Db) {
         throw notFound("Project factory task spec not found");
       }
 
-      const existingExecution = (await listTaskExecutionRows(project.id)).find(
+      const allExecutionRows = await listTaskExecutionRows(project.id);
+      const existingExecution = allExecutionRows.find(
         (row) => row.taskId === taskId && row.status !== "archived" && row.status !== "cancelled" && row.status !== "failed",
       );
       if (existingExecution) {
         throw conflict("Project factory task execution already exists for this task", {
           executionId: existingExecution.id,
           status: existingExecution.status,
+        });
+      }
+
+      const incompletePredecessors = (task.dependsOn ?? []).filter((depId) => {
+        const predecessorTask = manifest.chain.tasks.find((entry) => entry.id === depId);
+        if (!predecessorTask) {
+          return false;
+        }
+
+        const predecessorPhaseNumber = Number.parseInt(predecessorTask.phaseId.replace(/^P/, ""), 10);
+        if (Number.isNaN(predecessorPhaseNumber) || predecessorPhaseNumber < 3) {
+          return false;
+        }
+
+        const completedRow = allExecutionRows.find(
+          (row) => row.taskId === depId && (row.status === "completed" || row.status === "archived"),
+        );
+        return !completedRow;
+      });
+      if (incompletePredecessors.length > 0) {
+        throw conflict("Project factory task execution blocked by incomplete predecessor tasks", {
+          taskId,
+          incompletePredecessors,
+        });
+      }
+
+      const gateEvaluations = await listGateEvaluationsInternal(project.id);
+      const blockingGates = computeBlockingUpstreamGates({
+        manifest,
+        taskPhaseId: task.phaseId,
+        evaluations: gateEvaluations,
+      });
+      const unapprovedGate = blockingGates.find((gate) => gate.effectiveStatus !== "approved");
+      if (unapprovedGate) {
+        throw conflict("Project factory task execution blocked by upstream gate", {
+          taskId,
+          gateId: unapprovedGate.gateId,
+          effectiveStatus: unapprovedGate.effectiveStatus,
         });
       }
 
@@ -1683,6 +1819,164 @@ export function projectFactoryService(db: Db) {
         artifacts,
         questions,
         decisions,
+      };
+    },
+
+    listExecutionReviews: async (projectId: string): Promise<ProjectFactoryExecutionReview[]> => {
+      await getProject(projectId);
+      return await listExecutionReviewsInternal(projectId);
+    },
+
+    recordExecutionReview: async (
+      projectId: string,
+      executionId: string,
+      input: {
+        verdict: ProjectFactoryReviewVerdict;
+        summary: string;
+        decidedByAgentId?: string | null;
+        decidedByUserId?: string | null;
+      },
+    ): Promise<ProjectFactoryExecutionReview> => {
+      const project = await getProject(projectId);
+      const verdict = projectFactoryReviewVerdictSchema.parse(input.verdict);
+      const summary = input.summary.trim();
+      if (!summary) {
+        throw unprocessable("Project factory review summary is required");
+      }
+      const executionRow = await loadTaskExecutionRow(project.id, executionId);
+      const now = new Date();
+      const [review] = await db
+        .insert(projectFactoryReviews)
+        .values({
+          companyId: project.companyId,
+          projectId: project.id,
+          executionId: executionRow.id,
+          taskId: executionRow.taskId,
+          verdict,
+          summary,
+          decidedByAgentId: input.decidedByAgentId ?? null,
+          decidedByUserId: input.decidedByUserId ?? null,
+          decidedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      return mapReviewRow(review);
+    },
+
+    listGateEvaluations: async (projectId: string): Promise<ProjectFactoryGateEvaluation[]> => {
+      await getProject(projectId);
+      return await listGateEvaluationsInternal(projectId);
+    },
+
+    recordGateEvaluation: async (
+      projectId: string,
+      input: {
+        gateId: string;
+        status: ProjectFactoryGateEvaluationStatus;
+        summary: string;
+        phaseId?: string | null;
+        decidedByAgentId?: string | null;
+        decidedByUserId?: string | null;
+      },
+    ): Promise<ProjectFactoryGateEvaluation> => {
+      const project = await getProject(projectId);
+      const gateId = projectFactoryGateIdSchema.parse(input.gateId);
+      const status = projectFactoryGateEvaluationStatusSchema.parse(input.status);
+      const summary = input.summary.trim();
+      if (!summary) {
+        throw unprocessable("Project factory gate evaluation summary is required");
+      }
+      // Best-effort phaseId from compiled manifest if available.
+      let phaseId = input.phaseId ?? null;
+      if (!phaseId) {
+        try {
+          const manifest = await readCompiledManifest(project.id);
+          phaseId = manifest.gates.find((gate) => gate.id === gateId)?.phaseId ?? null;
+        } catch {
+          phaseId = null;
+        }
+      }
+      const now = new Date();
+      const [evaluation] = await db
+        .insert(projectFactoryGateEvaluations)
+        .values({
+          companyId: project.companyId,
+          projectId: project.id,
+          gateId,
+          phaseId,
+          status,
+          summary,
+          decidedByAgentId: input.decidedByAgentId ?? null,
+          decidedByUserId: input.decidedByUserId ?? null,
+          decidedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      return mapGateEvaluationRow(evaluation);
+    },
+
+    getReviewState: async (projectId: string): Promise<ProjectFactoryReviewState> => {
+      const project = await getProject(projectId);
+      const evaluations = await listGateEvaluationsInternal(project.id);
+      const reviews = await listExecutionReviewsInternal(project.id);
+
+      let manifestGates: FactoryProjectManifest["gates"] = DEFAULT_FACTORY_GATES;
+      try {
+        const manifest = await readCompiledManifest(project.id);
+        manifestGates = manifest.gates;
+      } catch {
+        manifestGates = DEFAULT_FACTORY_GATES;
+      }
+
+      const latestEvaluationByGateId = new Map<string, ProjectFactoryGateEvaluation>();
+      for (const evaluation of evaluations) {
+        const existing = latestEvaluationByGateId.get(evaluation.gateId);
+        if (!existing || existing.decidedAt < evaluation.decidedAt) {
+          latestEvaluationByGateId.set(evaluation.gateId, evaluation);
+        }
+      }
+
+      const gates: ProjectFactoryGateState[] = manifestGates.map((gate) => {
+        const latestEvaluation = latestEvaluationByGateId.get(gate.id) ?? null;
+        const defaultStatus = factoryGateStatusSchema.parse(gate.status);
+        const effectiveStatus = latestEvaluation
+          ? factoryGateStatusSchema.parse(latestEvaluation.status)
+          : defaultStatus;
+        return {
+          gateId: gate.id,
+          phaseId: gate.phaseId,
+          title: gate.title,
+          blocking: gate.blocking,
+          defaultStatus,
+          effectiveStatus,
+          latestEvaluation,
+        };
+      });
+
+      const summariesByExecutionId = new Map<string, ProjectFactoryExecutionReviewSummary>();
+      // Reviews are sorted desc; first occurrence per execution is latest.
+      for (const review of reviews) {
+        const existing = summariesByExecutionId.get(review.executionId);
+        if (existing) {
+          existing.reviewCount += 1;
+          continue;
+        }
+        summariesByExecutionId.set(review.executionId, {
+          executionId: review.executionId,
+          taskId: review.taskId,
+          reviewCount: 1,
+          latestVerdict: review.verdict,
+          latestReviewedAt: review.decidedAt,
+        });
+      }
+
+      return {
+        projectId: project.id,
+        gates,
+        evaluations,
+        executionReviewSummaries: Array.from(summariesByExecutionId.values()),
       };
     },
   };
