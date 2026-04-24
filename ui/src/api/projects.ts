@@ -1,5 +1,11 @@
 import type {
   Project,
+  ProjectFactoryArtifact,
+  ProjectFactoryOperatorSummary,
+  ProjectFactoryRecoverySummary,
+  ProjectFactoryResumeTaskExecutionResult,
+  ProjectFactoryReviewState,
+  ProjectFactoryTaskExecution,
   ProjectWorkspace,
   WorkspaceOperation,
   WorkspaceRuntimeControlTarget,
@@ -57,5 +63,20 @@ export const projectsApi = {
     ),
   removeWorkspace: (projectId: string, workspaceId: string, companyId?: string) =>
     api.delete<ProjectWorkspace>(projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}`)),
+  getFactoryExecutions: (projectId: string, companyId?: string) =>
+    api.get<ProjectFactoryTaskExecution[]>(projectPath(projectId, companyId, "/factory/executions")),
+  getFactoryReviewState: (projectId: string, companyId?: string) =>
+    api.get<ProjectFactoryReviewState>(projectPath(projectId, companyId, "/factory/review-state")),
+  getFactoryRecovery: (projectId: string, companyId?: string) =>
+    api.get<ProjectFactoryRecoverySummary>(projectPath(projectId, companyId, "/factory/recovery")),
+  getFactoryOperatorSummary: (projectId: string, companyId?: string) =>
+    api.get<ProjectFactoryOperatorSummary>(projectPath(projectId, companyId, "/factory/operator-summary")),
+  getFactoryArtifacts: (projectId: string, companyId?: string) =>
+    api.get<ProjectFactoryArtifact[]>(projectPath(projectId, companyId, "/factory/artifacts")),
+  resumeFactoryExecution: (projectId: string, executionId: string, companyId?: string) =>
+    api.post<ProjectFactoryResumeTaskExecutionResult>(
+      projectPath(projectId, companyId, `/factory/executions/${encodeURIComponent(executionId)}/resume`),
+      {},
+    ),
   remove: (id: string, companyId?: string) => api.delete<Project>(projectPath(id, companyId)),
 };

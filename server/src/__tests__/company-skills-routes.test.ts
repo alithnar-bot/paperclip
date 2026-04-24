@@ -12,8 +12,17 @@ const mockAccessService = vi.hoisted(() => ({
 }));
 
 const mockCompanySkillService = vi.hoisted(() => ({
+  list: vi.fn(),
+  detail: vi.fn(),
+  updateStatus: vi.fn(),
+  readFile: vi.fn(),
   importFromSource: vi.fn(),
   deleteSkill: vi.fn(),
+  installUpdate: vi.fn(),
+}));
+
+const mockCompanyService = vi.hoisted(() => ({
+  getById: vi.fn(),
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
@@ -48,9 +57,14 @@ function registerModuleMocks() {
     companySkillService: () => mockCompanySkillService,
   }));
 
+  vi.doMock("../services/companies.js", () => ({
+    companyService: () => mockCompanyService,
+  }));
+
   vi.doMock("../services/index.js", () => ({
     accessService: () => mockAccessService,
     agentService: () => mockAgentService,
+    companyService: () => mockCompanyService,
     companySkillService: () => mockCompanySkillService,
     logActivity: mockLogActivity,
   }));
@@ -81,6 +95,7 @@ describe("company skill mutation permissions", () => {
     vi.doUnmock("../services/activity-log.js");
     vi.doUnmock("../services/agents.js");
     vi.doUnmock("../services/company-skills.js");
+    vi.doUnmock("../services/companies.js");
     vi.doUnmock("../services/index.js");
     vi.doUnmock("../routes/company-skills.js");
     vi.doUnmock("../routes/authz.js");
@@ -88,6 +103,10 @@ describe("company skill mutation permissions", () => {
     registerModuleMocks();
     vi.resetAllMocks();
     mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
+    mockCompanySkillService.list.mockResolvedValue([]);
+    mockCompanySkillService.detail.mockResolvedValue(null);
+    mockCompanySkillService.updateStatus.mockResolvedValue(null);
+    mockCompanySkillService.readFile.mockResolvedValue(null);
     mockCompanySkillService.importFromSource.mockResolvedValue({
       imported: [],
       warnings: [],
@@ -97,9 +116,28 @@ describe("company skill mutation permissions", () => {
       slug: "find-skills",
       name: "Find Skills",
     });
+    mockCompanySkillService.installUpdate.mockResolvedValue(null);
+    mockCompanyService.getById.mockResolvedValue({ id: "company-1", name: "Paperclip" });
     mockLogActivity.mockResolvedValue(undefined);
     mockAccessService.canUser.mockResolvedValue(true);
     mockAccessService.hasPermission.mockResolvedValue(false);
+  });
+
+  it("returns 404 for skill listing when the company no longer exists", async () => {
+    mockCompanyService.getById.mockResolvedValue(null);
+
+    const res = await request(await createApp({
+      type: "board",
+      userId: "local-board",
+      companyIds: ["company-1"],
+      source: "local_implicit",
+      isInstanceAdmin: false,
+    }))
+      .get("/api/companies/company-1/skills");
+
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: "Company not found" });
+    expect(mockCompanySkillService.list).not.toHaveBeenCalled();
   });
 
   it("allows local board operators to mutate company skills", async () => {

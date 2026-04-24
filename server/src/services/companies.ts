@@ -1,34 +1,147 @@
 import { and, count, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
-  companies,
-  companyLogos,
-  assets,
-  agents,
+  activityLog,
   agentApiKeys,
+  agentConfigRevisions,
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
-  issues,
-  issueComments,
-  projects,
-  goals,
-  heartbeatRuns,
-  heartbeatRunEvents,
-  costEvents,
-  financeEvents,
-  issueReadStates,
+  agents,
   approvalComments,
   approvals,
-  activityLog,
-  companySecrets,
-  joinRequests,
-  invites,
-  principalPermissionGrants,
+  assets,
+  budgetIncidents,
+  budgetPolicies,
+  companies,
+  companyLogos,
   companyMemberships,
+  companySecrets,
   companySkills,
+  companyUserSidebarPreferences,
+  costEvents,
+  documentRevisions,
+  documents,
+  environmentLeases,
+  environments,
+  executionWorkspaces,
+  feedbackExports,
+  feedbackVotes,
+  financeEvents,
+  goals,
+  heartbeatRunEvents,
+  heartbeatRuns,
+  inboxDismissals,
+  invites,
+  issueApprovals,
+  issueAttachments,
+  issueComments,
+  issueDocuments,
+  issueExecutionDecisions,
+  issueInboxArchives,
+  issueLabels,
+  issueReadStates,
+  issueReferenceMentions,
+  issueRelations,
+  issueThreadInteractions,
+  issueTreeHoldMembers,
+  issueTreeHolds,
+  issueWorkProducts,
+  issues,
+  joinRequests,
+  labels,
+  pluginCompanySettings,
+  principalPermissionGrants,
+  projectDocuments,
+  projectFactoryDecisions,
+  projectFactoryGateEvaluations,
+  projectFactoryQuestions,
+  projectFactoryReviews,
+  projectFactoryTaskExecutions,
+  projectGoals,
+  projects,
+  projectWorkspaces,
+  routineRuns,
+  routines,
+  routineTriggers,
+  workspaceOperations,
+  workspaceRuntimeServices,
 } from "@paperclipai/db";
 import { notFound, unprocessable } from "../errors.js";
+
+type CompanyScopedDeleteStep = {
+  name: string;
+  run: (tx: any, companyId: string) => Promise<unknown>;
+};
+
+const COMPANY_SCOPED_DELETE_STEPS: CompanyScopedDeleteStep[] = [
+  { name: "heartbeat_run_events", run: (tx, companyId) => tx.delete(heartbeatRunEvents).where(eq(heartbeatRunEvents.companyId, companyId)) },
+  { name: "agent_task_sessions", run: (tx, companyId) => tx.delete(agentTaskSessions).where(eq(agentTaskSessions.companyId, companyId)) },
+  { name: "activity_log", run: (tx, companyId) => tx.delete(activityLog).where(eq(activityLog.companyId, companyId)) },
+  { name: "budget_incidents", run: (tx, companyId) => tx.delete(budgetIncidents).where(eq(budgetIncidents.companyId, companyId)) },
+  { name: "approval_comments", run: (tx, companyId) => tx.delete(approvalComments).where(eq(approvalComments.companyId, companyId)) },
+  { name: "issue_approvals", run: (tx, companyId) => tx.delete(issueApprovals).where(eq(issueApprovals.companyId, companyId)) },
+  { name: "issue_attachments", run: (tx, companyId) => tx.delete(issueAttachments).where(eq(issueAttachments.companyId, companyId)) },
+  { name: "issue_comments", run: (tx, companyId) => tx.delete(issueComments).where(eq(issueComments.companyId, companyId)) },
+  { name: "issue_documents", run: (tx, companyId) => tx.delete(issueDocuments).where(eq(issueDocuments.companyId, companyId)) },
+  { name: "issue_execution_decisions", run: (tx, companyId) => tx.delete(issueExecutionDecisions).where(eq(issueExecutionDecisions.companyId, companyId)) },
+  { name: "issue_inbox_archives", run: (tx, companyId) => tx.delete(issueInboxArchives).where(eq(issueInboxArchives.companyId, companyId)) },
+  { name: "issue_labels", run: (tx, companyId) => tx.delete(issueLabels).where(eq(issueLabels.companyId, companyId)) },
+  { name: "issue_read_states", run: (tx, companyId) => tx.delete(issueReadStates).where(eq(issueReadStates.companyId, companyId)) },
+  { name: "issue_reference_mentions", run: (tx, companyId) => tx.delete(issueReferenceMentions).where(eq(issueReferenceMentions.companyId, companyId)) },
+  { name: "issue_relations", run: (tx, companyId) => tx.delete(issueRelations).where(eq(issueRelations.companyId, companyId)) },
+  { name: "issue_thread_interactions", run: (tx, companyId) => tx.delete(issueThreadInteractions).where(eq(issueThreadInteractions.companyId, companyId)) },
+  { name: "issue_tree_hold_members", run: (tx, companyId) => tx.delete(issueTreeHoldMembers).where(eq(issueTreeHoldMembers.companyId, companyId)) },
+  { name: "issue_tree_holds", run: (tx, companyId) => tx.delete(issueTreeHolds).where(eq(issueTreeHolds.companyId, companyId)) },
+  { name: "feedback_exports", run: (tx, companyId) => tx.delete(feedbackExports).where(eq(feedbackExports.companyId, companyId)) },
+  { name: "feedback_votes", run: (tx, companyId) => tx.delete(feedbackVotes).where(eq(feedbackVotes.companyId, companyId)) },
+  { name: "finance_events", run: (tx, companyId) => tx.delete(financeEvents).where(eq(financeEvents.companyId, companyId)) },
+  { name: "cost_events", run: (tx, companyId) => tx.delete(costEvents).where(eq(costEvents.companyId, companyId)) },
+  { name: "environment_leases", run: (tx, companyId) => tx.delete(environmentLeases).where(eq(environmentLeases.companyId, companyId)) },
+  { name: "issue_work_products", run: (tx, companyId) => tx.delete(issueWorkProducts).where(eq(issueWorkProducts.companyId, companyId)) },
+  { name: "workspace_operations", run: (tx, companyId) => tx.delete(workspaceOperations).where(eq(workspaceOperations.companyId, companyId)) },
+  { name: "workspace_runtime_services", run: (tx, companyId) => tx.delete(workspaceRuntimeServices).where(eq(workspaceRuntimeServices.companyId, companyId)) },
+  { name: "project_factory_reviews", run: (tx, companyId) => tx.delete(projectFactoryReviews).where(eq(projectFactoryReviews.companyId, companyId)) },
+  { name: "project_factory_decisions", run: (tx, companyId) => tx.delete(projectFactoryDecisions).where(eq(projectFactoryDecisions.companyId, companyId)) },
+  { name: "project_factory_gate_evaluations", run: (tx, companyId) => tx.delete(projectFactoryGateEvaluations).where(eq(projectFactoryGateEvaluations.companyId, companyId)) },
+  { name: "project_factory_task_executions", run: (tx, companyId) => tx.delete(projectFactoryTaskExecutions).where(eq(projectFactoryTaskExecutions.companyId, companyId)) },
+  { name: "project_factory_questions", run: (tx, companyId) => tx.delete(projectFactoryQuestions).where(eq(projectFactoryQuestions.companyId, companyId)) },
+  { name: "project_goals", run: (tx, companyId) => tx.delete(projectGoals).where(eq(projectGoals.companyId, companyId)) },
+  { name: "routine_runs", run: (tx, companyId) => tx.delete(routineRuns).where(eq(routineRuns.companyId, companyId)) },
+  { name: "routine_triggers", run: (tx, companyId) => tx.delete(routineTriggers).where(eq(routineTriggers.companyId, companyId)) },
+  { name: "routines", run: (tx, companyId) => tx.delete(routines).where(eq(routines.companyId, companyId)) },
+  { name: "join_requests", run: (tx, companyId) => tx.delete(joinRequests).where(eq(joinRequests.companyId, companyId)) },
+  { name: "invites", run: (tx, companyId) => tx.delete(invites).where(eq(invites.companyId, companyId)) },
+  { name: "company_logos", run: (tx, companyId) => tx.delete(companyLogos).where(eq(companyLogos.companyId, companyId)) },
+  { name: "project_documents", run: (tx, companyId) => tx.delete(projectDocuments).where(eq(projectDocuments.companyId, companyId)) },
+  { name: "document_revisions", run: (tx, companyId) => tx.delete(documentRevisions).where(eq(documentRevisions.companyId, companyId)) },
+  { name: "documents", run: (tx, companyId) => tx.delete(documents).where(eq(documents.companyId, companyId)) },
+  { name: "labels", run: (tx, companyId) => tx.delete(labels).where(eq(labels.companyId, companyId)) },
+  { name: "plugin_company_settings", run: (tx, companyId) => tx.delete(pluginCompanySettings).where(eq(pluginCompanySettings.companyId, companyId)) },
+  { name: "inbox_dismissals", run: (tx, companyId) => tx.delete(inboxDismissals).where(eq(inboxDismissals.companyId, companyId)) },
+  { name: "company_user_sidebar_preferences", run: (tx, companyId) => tx.delete(companyUserSidebarPreferences).where(eq(companyUserSidebarPreferences.companyId, companyId)) },
+  { name: "company_skills", run: (tx, companyId) => tx.delete(companySkills).where(eq(companySkills.companyId, companyId)) },
+  { name: "principal_permission_grants", run: (tx, companyId) => tx.delete(principalPermissionGrants).where(eq(principalPermissionGrants.companyId, companyId)) },
+  { name: "company_memberships", run: (tx, companyId) => tx.delete(companyMemberships).where(eq(companyMemberships.companyId, companyId)) },
+  { name: "company_secrets", run: (tx, companyId) => tx.delete(companySecrets).where(eq(companySecrets.companyId, companyId)) },
+  { name: "agent_api_keys", run: (tx, companyId) => tx.delete(agentApiKeys).where(eq(agentApiKeys.companyId, companyId)) },
+  { name: "agent_config_revisions", run: (tx, companyId) => tx.delete(agentConfigRevisions).where(eq(agentConfigRevisions.companyId, companyId)) },
+  { name: "agent_runtime_state", run: (tx, companyId) => tx.delete(agentRuntimeState).where(eq(agentRuntimeState.companyId, companyId)) },
+  { name: "heartbeat_runs", run: (tx, companyId) => tx.delete(heartbeatRuns).where(eq(heartbeatRuns.companyId, companyId)) },
+  { name: "agent_wakeup_requests", run: (tx, companyId) => tx.delete(agentWakeupRequests).where(eq(agentWakeupRequests.companyId, companyId)) },
+  { name: "execution_workspaces", run: (tx, companyId) => tx.delete(executionWorkspaces).where(eq(executionWorkspaces.companyId, companyId)) },
+  { name: "project_workspaces", run: (tx, companyId) => tx.delete(projectWorkspaces).where(eq(projectWorkspaces.companyId, companyId)) },
+  { name: "issues", run: (tx, companyId) => tx.delete(issues).where(eq(issues.companyId, companyId)) },
+  { name: "projects", run: (tx, companyId) => tx.delete(projects).where(eq(projects.companyId, companyId)) },
+  { name: "goals", run: (tx, companyId) => tx.delete(goals).where(eq(goals.companyId, companyId)) },
+  { name: "approvals", run: (tx, companyId) => tx.delete(approvals).where(eq(approvals.companyId, companyId)) },
+  { name: "budget_policies", run: (tx, companyId) => tx.delete(budgetPolicies).where(eq(budgetPolicies.companyId, companyId)) },
+  { name: "assets", run: (tx, companyId) => tx.delete(assets).where(eq(assets.companyId, companyId)) },
+  { name: "agents", run: (tx, companyId) => tx.delete(agents).where(eq(agents.companyId, companyId)) },
+  { name: "environments", run: (tx, companyId) => tx.delete(environments).where(eq(environments.companyId, companyId)) },
+];
+
+export const COMPANY_SCOPED_DELETE_TARGET_NAMES = COMPANY_SCOPED_DELETE_STEPS.map((step) => step.name);
 
 export function companyService(db: Db) {
   const ISSUE_PREFIX_FALLBACK = "CMP";
@@ -259,32 +372,9 @@ export function companyService(db: Db) {
 
     remove: (id: string) =>
       db.transaction(async (tx) => {
-        // Delete from child tables in dependency order
-        await tx.delete(heartbeatRunEvents).where(eq(heartbeatRunEvents.companyId, id));
-        await tx.delete(agentTaskSessions).where(eq(agentTaskSessions.companyId, id));
-        await tx.delete(activityLog).where(eq(activityLog.companyId, id));
-        await tx.delete(heartbeatRuns).where(eq(heartbeatRuns.companyId, id));
-        await tx.delete(agentWakeupRequests).where(eq(agentWakeupRequests.companyId, id));
-        await tx.delete(agentApiKeys).where(eq(agentApiKeys.companyId, id));
-        await tx.delete(agentRuntimeState).where(eq(agentRuntimeState.companyId, id));
-        await tx.delete(issueComments).where(eq(issueComments.companyId, id));
-        await tx.delete(costEvents).where(eq(costEvents.companyId, id));
-        await tx.delete(financeEvents).where(eq(financeEvents.companyId, id));
-        await tx.delete(approvalComments).where(eq(approvalComments.companyId, id));
-        await tx.delete(approvals).where(eq(approvals.companyId, id));
-        await tx.delete(companySecrets).where(eq(companySecrets.companyId, id));
-        await tx.delete(joinRequests).where(eq(joinRequests.companyId, id));
-        await tx.delete(invites).where(eq(invites.companyId, id));
-        await tx.delete(principalPermissionGrants).where(eq(principalPermissionGrants.companyId, id));
-        await tx.delete(companyMemberships).where(eq(companyMemberships.companyId, id));
-        await tx.delete(companySkills).where(eq(companySkills.companyId, id));
-        await tx.delete(issueReadStates).where(eq(issueReadStates.companyId, id));
-        await tx.delete(issues).where(eq(issues.companyId, id));
-        await tx.delete(companyLogos).where(eq(companyLogos.companyId, id));
-        await tx.delete(assets).where(eq(assets.companyId, id));
-        await tx.delete(goals).where(eq(goals.companyId, id));
-        await tx.delete(projects).where(eq(projects.companyId, id));
-        await tx.delete(agents).where(eq(agents.companyId, id));
+        for (const step of COMPANY_SCOPED_DELETE_STEPS) {
+          await step.run(tx, id);
+        }
         const rows = await tx
           .delete(companies)
           .where(eq(companies.id, id))
