@@ -1,143 +1,155 @@
 # Project Status Handoff
 
-Updated: 2026-04-24 10:22:11 UTC
-Repo root: `/Users/halbot/work/.worktrees/paperclip-factory-core-v1`
-Branch: `feat/factory-core-v1`
-Upstream tracking: `origin/feat/factory-core-v1`
-Primary feature commit: `4934acd27e7d18859e4eb9e533e9da3e49203384`
+Updated: 2026-04-24 15:31:02 UTC
+Repo root: `/Users/halbot/work/.worktrees/paperclip-factory-operator-ui-v1`
+Branch: `feat/factory-operator-ui-v1`
+Upstream tracking: `origin/feat/factory-operator-ui-v1`
+Base branch: `origin/master`
+Current HEAD before pending commit: `0c80be69ff78840a418a35de28f75e20b4eb7a79`
 
 ## Current status
 
-- Phase 0: implemented
-- Phase 1: implemented
-- Phase 2: implemented
-- Phase 3: implemented
-- Latest branch state: committed and pushed
-- Working tree status at update time: expected to be clean after this handoff commit
+- Phase 0–5 backend factory stack is already merged to `master`
+- This branch adds the first project-scoped operator UI layer on top of that backend
+- Worktree currently contains local, verified changes that are not yet committed/pushed beyond the earlier planning commit
+- Full Playwright E2E suite passed on this branch during final QA verification
 
-## Commit plan that was used
+## What is implemented on this branch
 
-A **single coherent feature commit** was used for the factory work landed so far.
+### Operator UI/API slice
 
-Reason:
-- the current branch had no earlier incremental commits for Phases 0-2
-- the work is tightly coupled across docs, shared contracts, DB schema, routes, services, migrations, and tests
-- both migration journal/snapshots and the integrated validation now reflect the combined Phase 0-3 slice cleanly
-- splitting it retroactively would have produced prettier history, but with more mechanical risk than actual value
+- Added typed project-factory UI client methods in:
+  - `ui/src/api/projects.ts`
+- Added factory-specific React Query keys in:
+  - `ui/src/lib/queryKeys.ts`
+- Added a dedicated `Factory` tab to project detail routing/navigation in:
+  - `ui/src/pages/ProjectDetail.tsx`
+  - `ui/src/App.tsx`
+- Added a new project-scoped factory operator surface in:
+  - `ui/src/components/ProjectFactoryContent.tsx`
 
-Committed feature commit:
-- `4934acd27e7d18859e4eb9e533e9da3e49203384` — `feat: add paperclip project factory core through phase 3`
+### Factory control panel capabilities
 
-## What is now implemented
+The new `Factory` tab now exposes:
 
-### Phase 0 — Interface lock
-- factory planning pack under `doc/factory/`
-- manifest and factory contract definitions under `packages/shared/src/types/factory.ts`
-- manifest validators under `packages/shared/src/validators/factory.ts`
-- sample manifest validation test in `packages/shared/src/factory.test.ts`
+- operator summary metrics
+  - open questions
+  - blocking questions
+  - pending reviews
+  - gate pressure
+  - active executions
+  - failed executions
+  - recovery issues
+  - resumable executions
+- effective gate state and review summaries
+- execution list with factory task/workspace metadata
+- recovery issue list
+- resume action for resumable failed executions
 
-### Phase 1 — Intake + decisions
-- project artifact registry via:
-  - `packages/db/src/schema/project_documents.ts`
-  - `server/src/services/project-factory.ts`
-- project-scoped clarification questions via:
-  - `packages/db/src/schema/project_factory_questions.ts`
-- project-scoped decisions via:
-  - `packages/db/src/schema/project_factory_decisions.ts`
-- intake summary route/service surface via `/api/projects/:id/factory/*`
+### Test coverage added
 
-### Phase 2 — Compilation
-- compile service + route implemented
-- generated artifacts persisted back into project-linked documents:
-  - `project-json`
-  - `task-specs-readme`
-  - `task-spec-fs-00` through `task-spec-fs-07`
-- compile validation restored and preserved in service/route tests
+- `ui/src/components/ProjectFactoryContent.test.tsx`
+  - renders summary/gate/recovery/execution state
+  - verifies resume action and query refresh path
+  - verifies explicit error surfacing
+- `ui/src/pages/ProjectDetail.test.tsx`
+  - verifies the `Factory` tab is present and routes to the factory content
+- `tests/e2e/factory-operator.spec.ts`
+  - browser-level project factory flow using a real seeded project and controlled factory endpoint fixtures
+  - verifies the operator can open the Factory tab and resume a failed execution from the UI
 
-### Phase 3 — Execution substrate
-- new persistence table:
-  - `packages/db/src/schema/project_factory_task_executions.ts`
-- migration generated:
-  - `packages/db/src/migrations/0070_cheerful_roland_deschain.sql`
-- service methods implemented:
-  - `listTaskExecutions(...)`
-  - `launchTaskExecution(...)`
-  - `markTaskExecutionCompleted(...)`
-  - `archiveTaskExecution(...)`
-- route surface implemented:
-  - `GET /api/projects/:id/factory/executions`
-  - `POST /api/projects/:id/factory/executions`
-  - `POST /api/projects/:id/factory/executions/:executionId/complete`
-  - `POST /api/projects/:id/factory/executions/:executionId/archive`
-- execution manifest artifact generation/persistence implemented
-- launch pack writing implemented inside realized worktrees:
-  - `.paperclip/factory/executions/<execution-id>/TASK.md`
-  - `.paperclip/factory/executions/<execution-id>/execution.json`
-- archive flow wired through existing workspace cleanup helpers
+### Documentation updated
 
-## Important architectural note
+- `doc/factory/IMPLEMENTATION-PLAN.md`
+  - now records the follow-on operator UI slice as implemented
+  - remaining work narrowed to richer standalone dashboards and broader real-state bootstrap validation
 
-Phase 3 is implemented as a **thin factory layer** on top of Paperclip’s existing execution workspace machinery.
+## Pending working-tree files
 
-It reuses the existing substrate rather than inventing a parallel one:
-- `server/src/services/workspace-runtime.ts`
-- `server/src/services/execution-workspaces.ts`
-- `server/src/services/workspace-operations.ts`
-- `server/src/services/execution-workspace-policy.ts`
+Tracked modifications:
+- `doc/factory/IMPLEMENTATION-PLAN.md`
+- `ui/src/App.tsx`
+- `ui/src/api/projects.ts`
+- `ui/src/lib/queryKeys.ts`
+- `ui/src/pages/ProjectDetail.tsx`
 
-That remains the correct approach for future work.
+New files:
+- `PROJECT-STATUS-HANDOFF.md`
+- `tests/e2e/factory-operator.spec.ts`
+- `ui/src/components/ProjectFactoryContent.test.tsx`
+- `ui/src/components/ProjectFactoryContent.tsx`
+- `ui/src/pages/ProjectDetail.test.tsx`
 
-## Validation status
+Already committed earlier on this branch:
+- `doc/plans/2026-04-24-factory-operator-ui-e2e.md`
 
-The following validations passed on the integrated Phase 0-3 tree:
+## Validation performed
+
+### Targeted UI tests
+
+Passed:
 
 ```bash
-PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/vitest run server/src/__tests__/project-factory-service.test.ts server/src/__tests__/project-factory-routes.test.ts
-PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/tsc -p packages/shared/tsconfig.json --noEmit --pretty false
-PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/tsc -p packages/db/tsconfig.json --noEmit --pretty false
-PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/tsc -p server/tsconfig.json --noEmit --pretty false
+./node_modules/.bin/vitest run ui/src/components/ProjectFactoryContent.test.tsx ui/src/pages/ProjectDetail.test.tsx
 ```
 
-Test result:
-- `2` test files passed
-- `10` tests passed
+Result:
+- 2 test files passed
+- 4 tests passed
 
-## Independent review notes
+### Typecheck/build verification
 
-An independent reviewer pass found no security blockers.
-
-Non-blocking follow-up suggestions worth remembering later:
-- consider making completion-state and workspace-state updates transactional where practical
-- consider a cleaner status than `cleanup_failed` for abandoned non-runtime-created workspaces
-- confirm legacy decision-status data cannot violate the new parsed enum expectations
-
-None of the above block the current branch from being resumed or reviewed.
-
-## What to do next
-
-Most likely next step:
-1. prepare and review the **Phase 5** follow-on PR
-
-Reasonable concrete follow-ons:
-- add richer board/UI surfaces for the operator summary
-- expand end-to-end bootstrap validation on real projects
-- tighten resume/recovery handling for additional interrupted execution states
-- consider a dedicated factory dashboard once the stacked PRs land
-
-## Useful commands when resuming
+Passed:
 
 ```bash
-git checkout feat/factory-core-v1
-git pull --ff-only
-PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/vitest run server/src/__tests__/project-factory-service.test.ts server/src/__tests__/project-factory-routes.test.ts
-PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/tsc -p packages/shared/tsconfig.json --noEmit --pretty false
-PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/tsc -p packages/db/tsconfig.json --noEmit --pretty false
-PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/tsc -p server/tsconfig.json --noEmit --pretty false
+pnpm --filter @paperclipai/ui typecheck
+pnpm --filter @paperclipai/shared typecheck
+pnpm --filter @paperclipai/server typecheck
+pnpm -r typecheck
+pnpm --filter @paperclipai/ui build
+pnpm build
 ```
 
-PR shortcut from GitHub remote output:
-- `https://github.com/alithnar-bot/paperclip/pull/new/feat/factory-core-v1`
+### Browser verification
+
+Passed targeted browser test:
+
+```bash
+npx playwright test --config tests/e2e/playwright.config.ts tests/e2e/factory-operator.spec.ts
+```
+
+Passed full browser suite:
+
+```bash
+pnpm test:e2e
+```
+
+Result:
+- 7 Playwright tests passed
+- no E2E failures remained after installing the missing Chromium browser runtime
+
+## QA notes and caveats
+
+- `pnpm test:run -- <file>` is not a reliable way to target a single Vitest file in this repo; it can fan out into the broader suite. For precise QA runs, use `./node_modules/.bin/vitest run <file>` directly.
+- Playwright initially failed because the Chromium runtime was not installed in the current environment. This was resolved with:
+
+```bash
+npx playwright install chromium
+```
+
+- The new factory E2E uses:
+  - a real seeded company/project in the test server
+  - controlled fixtures for the factory-specific API endpoints
+
+That means it proves the operator UI flow and resume interaction cleanly, but it is not yet a full end-to-end proof of live compiled factory state generated entirely by the backend.
+
+## Immediate next steps
+
+1. run independent review on the branch diff
+2. commit the operator UI/E2E slice
+3. push `feat/factory-operator-ui-v1`
+4. open the PR against `master`
 
 ## Restart point in one sentence
 
-Restart from the pushed `feat/factory-core-v1` branch with Phase 0-3 complete, then continue into Phase 4 review/gates rather than revisiting the execution substrate.
+Restart from `feat/factory-operator-ui-v1` with the Factory tab/operator panel implemented and both targeted plus full Playwright E2E verification passing, then finish review/commit/push/PR paperwork.

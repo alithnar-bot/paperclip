@@ -88,8 +88,12 @@ Implemented inside the fork today:
   - derived recovery summary for resumable executions, cleanup-failed workspaces, missing workspace linkage, and orphan workspaces
   - operator summary surface exposing open questions, gate state, pending reviews, execution counts, and recovery counts
   - resume flow for failed executions with surviving workspaces
+- **Follow-on operator UI slice**
+  - project-level `Factory` tab in the board UI
+  - operator control panel consuming review-state, recovery, execution, and operator-summary APIs
+  - browser smoke coverage for the factory tab and resume interaction using a seeded project with controlled factory API fixtures
 
 Still pending:
 
-- richer UI/operator dashboard surfaces beyond the API layer
-- broader end-to-end bootstrap demonstrations on real projects
+- richer standalone/dashboard-level factory operator surfaces beyond the project-scoped tab
+- broader end-to-end bootstrap demonstrations on real projects with real factory state rather than controlled browser fixtures

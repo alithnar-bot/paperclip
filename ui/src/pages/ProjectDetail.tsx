@@ -23,6 +23,7 @@ import { IssuesList } from "../components/IssuesList";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { ProjectWorkspacesContent } from "../components/ProjectWorkspacesContent";
+import { ProjectFactoryContent } from "../components/ProjectFactoryContent";
 import { buildProjectWorkspaceSummaries } from "../lib/project-workspaces-tab";
 import { projectRouteRef } from "../lib/utils";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,7 @@ import { PluginSlotMount, PluginSlotOutlet, usePluginSlots } from "@/plugins/slo
 
 /* ── Top-level tab types ── */
 
-type ProjectBaseTab = "overview" | "list" | "workspaces" | "configuration" | "budget";
+type ProjectBaseTab = "overview" | "list" | "factory" | "workspaces" | "configuration" | "budget";
 type ProjectPluginTab = `plugin:${string}`;
 type ProjectTab = ProjectBaseTab | ProjectPluginTab;
 
@@ -48,6 +49,7 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
   if (tab === "overview") return "overview";
   if (tab === "configuration") return "configuration";
   if (tab === "budget") return "budget";
+  if (tab === "factory") return "factory";
   if (tab === "issues") return "list";
   if (tab === "workspaces") return "workspaces";
   return null;
@@ -395,6 +397,10 @@ export function ProjectDetail() {
       navigate(`/projects/${canonicalProjectRef}/budget`, { replace: true });
       return;
     }
+    if (activeTab === "factory") {
+      navigate(`/projects/${canonicalProjectRef}/factory`, { replace: true });
+      return;
+    }
     if (activeTab === "workspaces") {
       navigate(`/projects/${canonicalProjectRef}/workspaces`, { replace: true });
       return;
@@ -528,6 +534,9 @@ export function ProjectDetail() {
     if (cachedTab === "budget") {
       return <Navigate to={`/projects/${canonicalProjectRef}/budget`} replace />;
     }
+    if (cachedTab === "factory") {
+      return <Navigate to={`/projects/${canonicalProjectRef}/factory`} replace />;
+    }
     if (cachedTab === "workspaces" && workspaceTabDecisionLoaded && showWorkspacesTab) {
       return <Navigate to={`/projects/${canonicalProjectRef}/workspaces`} replace />;
     }
@@ -555,6 +564,8 @@ export function ProjectDetail() {
     }
     if (tab === "overview") {
       navigate(`/projects/${canonicalProjectRef}/overview`);
+    } else if (tab === "factory") {
+      navigate(`/projects/${canonicalProjectRef}/factory`);
     } else if (tab === "workspaces") {
       navigate(`/projects/${canonicalProjectRef}/workspaces`);
     } else if (tab === "budget") {
@@ -627,6 +638,7 @@ export function ProjectDetail() {
           items={[
             { value: "list", label: "Issues" },
             { value: "overview", label: "Overview" },
+            { value: "factory", label: "Factory" },
             ...(showWorkspacesTab ? [{ value: "workspaces", label: "Workspaces" }] : []),
             { value: "configuration", label: "Configuration" },
             { value: "budget", label: "Budget" },
@@ -649,6 +661,14 @@ export function ProjectDetail() {
             const asset = await uploadImage.mutateAsync(file);
             return asset.contentPath;
           }}
+        />
+      )}
+
+      {activeTab === "factory" && project?.id && resolvedCompanyId && (
+        <ProjectFactoryContent
+          companyId={resolvedCompanyId}
+          projectId={project.id}
+          projectRef={canonicalProjectRef}
         />
       )}
 
