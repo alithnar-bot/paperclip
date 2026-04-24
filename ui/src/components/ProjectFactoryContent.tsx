@@ -1,6 +1,11 @@
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ProjectFactoryRecoveryIssue, ProjectFactoryTaskExecution } from "@paperclipai/shared";
+import {
+  factoryProjectManifestSchema,
+  type FactoryProjectManifest,
+  type ProjectFactoryRecoveryIssue,
+  type ProjectFactoryTaskExecution,
+} from "@paperclipai/shared";
 import {
   Clock3,
   GitBranch,
@@ -26,7 +31,7 @@ interface ProjectFactoryContentProps {
 }
 
 function humanizeStatus(value: string) {
-  return value.replaceAll("_", " ");
+  return value.replaceAll("_", " ").replaceAll("-", " ");
 }
 
 function executionStatusClasses(status: ProjectFactoryTaskExecution["status"]) {
@@ -46,6 +51,22 @@ function executionStatusClasses(status: ProjectFactoryTaskExecution["status"]) {
   }
 }
 
+function taskStatusClasses(status: FactoryProjectManifest["chain"]["tasks"][number]["status"]) {
+  switch (status) {
+    case "done":
+      return "border-sky-500/30 bg-sky-500/10 text-sky-200";
+    case "in_progress":
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
+    case "blocked":
+      return "border-red-500/30 bg-red-500/10 text-red-200";
+    case "cancelled":
+      return "border-amber-500/30 bg-amber-500/10 text-amber-200";
+    case "todo":
+    default:
+      return "border-border bg-muted text-muted-foreground";
+  }
+}
+
 function gateStatusClasses(status: string) {
   switch (status) {
     case "approved":
@@ -59,6 +80,26 @@ function gateStatusClasses(status: string) {
     default:
       return "border-amber-500/30 bg-amber-500/10 text-amber-200";
   }
+}
+
+function parseCriticalDagManifest(body: string | null | undefined): FactoryProjectManifest | null {
+  if (!body?.trim()) return null;
+  try {
+    const parsed = JSON.parse(body);
+    const result = factoryProjectManifestSchema.safeParse(parsed);
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatEstimateMinutes(estimateMin: number) {
+  if (estimateMin >= 60) {
+    const hours = estimateMin / 60;
+    const rounded = Number.isInteger(hours) ? String(hours) : hours.toFixed(1);
+    return `${rounded}h`;
+  }
+  return `${estimateMin}m`;
 }
 
 function recoveryKindLabel(kind: ProjectFactoryRecoveryIssue["kind"]) {
@@ -95,6 +136,11 @@ export function ProjectFactoryContent({ companyId, projectId, projectRef }: Proj
     queryFn: () => projectsApi.getFactoryRecovery(projectId, companyId),
     enabled: Boolean(projectId && companyId),
   });
+  const artifactsQuery = useQuery({
+    queryKey: queryKeys.projects.factoryArtifacts(projectId),
+    queryFn: () => projectsApi.getFactoryArtifacts(projectId, companyId),
+    enabled: Boolean(projectId && companyId),
+  });
   const executionsQuery = useQuery({
     queryKey: queryKeys.projects.factoryExecutions(projectId),
     queryFn: () => projectsApi.getFactoryExecutions(projectId, companyId),
@@ -126,30 +172,49 @@ export function ProjectFactoryContent({ companyId, projectId, projectRef }: Proj
   });
 
   const isLoading =
-    operatorSummaryQuery.isPending || reviewStateQuery.isPending || recoveryQuery.isPending || executionsQuery.isPending;
+    operatorSummaryQuery.isPending
+    || reviewStateQuery.isPending
+    || recoveryQuery.isPending
+    || artifactsQuery.isPending
+    || executionsQuery.isPending;
 
   const firstError = useMemo(() => {
     return (
       (operatorSummaryQuery.error as Error | null) ??
       (reviewStateQuery.error as Error | null) ??
       (recoveryQuery.error as Error | null) ??
+      (artifactsQuery.error as Error | null) ??
       (executionsQuery.error as Error | null) ??
       null
     );
-  }, [executionsQuery.error, operatorSummaryQuery.error, recoveryQuery.error, reviewStateQuery.error]);
+  }, [artifactsQuery.error, executionsQuery.error, operatorSummaryQuery.error, recoveryQuery.error, reviewStateQuery.error]);
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">Loading factory state...</p>;
   }
 
-  if (firstError || !operatorSummaryQuery.data || !reviewStateQuery.data || !recoveryQuery.data || !executionsQuery.data) {
+  if (firstError || !operatorSummaryQuery.data || !reviewStateQuery.data || !recoveryQuery.data || !artifactsQuery.data || !executionsQuery.data) {
     return <p className="text-sm text-destructive">{firstError?.message ?? "Factory state is unavailable."}</p>;
   }
 
   const operatorSummary = operatorSummaryQuery.data;
   const reviewState = reviewStateQuery.data;
   const recovery = recoveryQuery.data;
+  const artifacts = artifactsQuery.data;
   const executions = executionsQuery.data;
+  const compiledDagArtifact = artifacts.find((artifact) => artifact.key === "project-json" && artifact.kind === "dag_manifest");
+  const compiledDag = parseCriticalDagManifest(compiledDagArtifact?.body);
+  const phaseNameById = new Map(compiledDag?.phases.map((phase) => [phase.id, phase.name]) ?? []);
+  const criticalPathTasks = compiledDag?.chain.tasks.filter((task) => task.onCriticalPath) ?? [];
+  const waveGroups = compiledDag
+    ? Array.from(new Set(compiledDag.chain.tasks.map((task) => task.wave)))
+      .sort((left, right) => left - right)
+      .map((wave) => ({
+        wave,
+        tasks: compiledDag.chain.tasks.filter((task) => task.wave === wave),
+      }))
+    : [];
+  const criticalPathEstimateMin = criticalPathTasks.reduce((sum, task) => sum + task.estimateMin, 0);
 
   return (
     <div className="space-y-6" data-testid="project-factory-content">
@@ -236,6 +301,100 @@ export function ProjectFactoryContent({ companyId, projectId, projectRef }: Proj
             />
           </div>
         </div>
+      </section>
+
+      <section className="rounded-lg border border-border bg-card p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h4 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">Critical DAG</h4>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The compiled Critical DAG shows dependency order, critical-path work, and wave-level concurrency.
+            </p>
+          </div>
+          {compiledDag ? (
+            <div className="text-xs text-muted-foreground">
+              {compiledDag.chain.completedTasks}/{compiledDag.chain.totalTasks} tasks complete
+            </div>
+          ) : null}
+        </div>
+
+        {!compiledDag ? (
+          <p className="mt-4 text-sm text-muted-foreground">
+            Compile the factory to materialize the current Critical DAG manifest.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-5">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-border/70 bg-background/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Methodology</p>
+                <p className="mt-2 text-sm font-medium">{humanizeStatus(compiledDag.methodology)}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-background/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Critical path</p>
+                <p className="mt-2 text-sm font-medium">{criticalPathTasks.length} tasks · {formatEstimateMinutes(criticalPathEstimateMin)}</p>
+              </div>
+              <div className="rounded-lg border border-border/70 bg-background/70 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Wave plan</p>
+                <p className="mt-2 text-sm font-medium">{waveGroups.length} execution waves</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h5 className="text-sm font-semibold">Critical path</h5>
+              {criticalPathTasks.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No critical-path tasks are flagged yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {criticalPathTasks.map((task) => (
+                    <div key={`critical-${task.id}`} className="rounded-lg border border-border/70 bg-background/70 p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-medium">{task.name}</p>
+                          <p className="text-xs text-muted-foreground">{task.id} · {phaseNameById.get(task.phaseId) ?? task.phaseId}</p>
+                        </div>
+                        <span className="inline-flex w-fit items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-200">
+                          Critical path
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              {waveGroups.map(({ wave, tasks }) => (
+                <div key={`wave-${wave}`} className="rounded-lg border border-border/70 bg-background/70 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h5 className="text-sm font-semibold">Wave {wave}</h5>
+                    <span className="text-xs text-muted-foreground">{tasks.length} task{tasks.length === 1 ? "" : "s"}</span>
+                  </div>
+                  <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                    {tasks.map((task) => (
+                      <div key={task.id} className="rounded-lg border border-border bg-card p-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium">{task.name}</p>
+                          <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${taskStatusClasses(task.status)}`}>
+                            {humanizeStatus(task.status)}
+                          </span>
+                          {task.onCriticalPath ? (
+                            <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-200">
+                              Critical path
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">{task.id} · {phaseNameById.get(task.phaseId) ?? task.phaseId} · {formatEstimateMinutes(task.estimateMin)}</p>
+                        <p className="mt-3 text-sm text-muted-foreground">
+                          {task.dependsOn.length > 0 ? `Depends on ${task.dependsOn.join(", ")}` : "No upstream dependencies."}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">

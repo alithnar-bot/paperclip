@@ -4,11 +4,12 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
+  ProjectFactoryArtifact,
   ProjectFactoryOperatorSummary,
   ProjectFactoryRecoverySummary,
   ProjectFactoryReviewState,
-  ProjectFactoryTaskExecution,
   ProjectFactoryResumeTaskExecutionResult,
+  ProjectFactoryTaskExecution,
 } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectFactoryContent } from "./ProjectFactoryContent";
@@ -17,6 +18,7 @@ const getFactoryExecutionsMock = vi.fn<(projectId: string, companyId?: string) =
 const getFactoryReviewStateMock = vi.fn<(projectId: string, companyId?: string) => Promise<ProjectFactoryReviewState>>();
 const getFactoryRecoveryMock = vi.fn<(projectId: string, companyId?: string) => Promise<ProjectFactoryRecoverySummary>>();
 const getFactoryOperatorSummaryMock = vi.fn<(projectId: string, companyId?: string) => Promise<ProjectFactoryOperatorSummary>>();
+const getFactoryArtifactsMock = vi.fn<(projectId: string, companyId?: string) => Promise<ProjectFactoryArtifact[]>>();
 const resumeFactoryExecutionMock = vi.fn<(projectId: string, executionId: string, companyId?: string) => Promise<ProjectFactoryResumeTaskExecutionResult>>();
 const pushToastMock = vi.fn();
 
@@ -26,6 +28,7 @@ vi.mock("../api/projects", () => ({
     getFactoryReviewState: (projectId: string, companyId?: string) => getFactoryReviewStateMock(projectId, companyId),
     getFactoryRecovery: (projectId: string, companyId?: string) => getFactoryRecoveryMock(projectId, companyId),
     getFactoryOperatorSummary: (projectId: string, companyId?: string) => getFactoryOperatorSummaryMock(projectId, companyId),
+    getFactoryArtifacts: (projectId: string, companyId?: string) => getFactoryArtifactsMock(projectId, companyId),
     resumeFactoryExecution: (projectId: string, executionId: string, companyId?: string) =>
       resumeFactoryExecutionMock(projectId, executionId, companyId),
   },
@@ -166,6 +169,87 @@ function createReviewState(overrides: Partial<ProjectFactoryReviewState> = {}): 
   };
 }
 
+function createFactoryArtifact(overrides: Partial<ProjectFactoryArtifact> = {}): ProjectFactoryArtifact {
+  return {
+    id: overrides.id ?? "artifact-1",
+    companyId: overrides.companyId ?? "company-1",
+    projectId: overrides.projectId ?? "project-1",
+    key: overrides.key ?? "project-json",
+    kind: overrides.kind ?? "dag_manifest",
+    required: overrides.required ?? true,
+    sourcePath: overrides.sourcePath ?? "generated/project.json",
+    description: overrides.description ?? "Generated Critical DAG manifest for the project factory.",
+    title: overrides.title ?? "Compiled project.json",
+    format: overrides.format ?? "json",
+    latestRevisionId: overrides.latestRevisionId ?? "revision-1",
+    latestRevisionNumber: overrides.latestRevisionNumber ?? 1,
+    createdByAgentId: overrides.createdByAgentId ?? null,
+    createdByUserId: overrides.createdByUserId ?? "user-1",
+    updatedByAgentId: overrides.updatedByAgentId ?? null,
+    updatedByUserId: overrides.updatedByUserId ?? "user-1",
+    createdAt: overrides.createdAt ?? now,
+    updatedAt: overrides.updatedAt ?? now,
+    body:
+      overrides.body ?? JSON.stringify({
+        id: "project-1",
+        name: "Factory Operator Localhost Project",
+        version: "1.0.0",
+        status: "active",
+        risk: "medium",
+        methodology: "ccpm-dag",
+        description: "Compiled factory manifest",
+        phases: [
+          { id: "P0", name: "Interface Lock", description: null },
+          { id: "P2", name: "Compilation", description: null },
+          { id: "P4", name: "Execution Substrate", description: null },
+        ],
+        artifacts: [],
+        questions: [],
+        decisions: [],
+        gates: [],
+        chain: {
+          totalTasks: 3,
+          completedTasks: 1,
+          tasks: [
+            {
+              id: "FS-00",
+              name: "Interface lock",
+              phaseId: "P0",
+              wave: 0,
+              status: "done",
+              estimateMin: 90,
+              dependsOn: [],
+              onCriticalPath: true,
+              acceptance: ["Contract locked"],
+            },
+            {
+              id: "FS-03",
+              name: "Critical DAG compiler and manifest generation",
+              phaseId: "P2",
+              wave: 1,
+              status: "todo",
+              estimateMin: 150,
+              dependsOn: ["FS-00"],
+              onCriticalPath: true,
+              acceptance: ["Valid manifest generated"],
+            },
+            {
+              id: "FS-05",
+              name: "Parallel execution substrate",
+              phaseId: "P4",
+              wave: 2,
+              status: "todo",
+              estimateMin: 120,
+              dependsOn: ["FS-03"],
+              onCriticalPath: false,
+              acceptance: ["Launch path exists"],
+            },
+          ],
+        },
+      }, null, 2),
+  };
+}
+
 async function flushReact() {
   await act(async () => {
     await Promise.resolve();
@@ -179,6 +263,7 @@ describe("ProjectFactoryContent", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
+    getFactoryArtifactsMock.mockResolvedValue([]);
     vi.clearAllMocks();
   });
 
@@ -219,6 +304,40 @@ describe("ProjectFactoryContent", () => {
     expect(container.textContent).toContain("Recovery and operator view");
     expect(container.textContent).toContain("Execution can be resumed from its surviving workspace.");
     expect(container.querySelector('button[data-testid="resume-execution-execution-failed"]')).not.toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("renders the compiled critical DAG when a project-json factory artifact is available", async () => {
+    getFactoryOperatorSummaryMock.mockResolvedValue(createOperatorSummary());
+    getFactoryReviewStateMock.mockResolvedValue(createReviewState());
+    getFactoryRecoveryMock.mockResolvedValue(createRecoverySummary());
+    getFactoryExecutionsMock.mockResolvedValue([]);
+    getFactoryArtifactsMock.mockResolvedValue([createFactoryArtifact()]);
+
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ProjectFactoryContent companyId="company-1" projectId="project-1" projectRef="project-alpha" />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    expect(container.textContent).toContain("Critical DAG");
+    expect(container.textContent).toContain("Methodology");
+    expect(container.textContent).toContain("ccpm dag");
+    expect(container.textContent).toContain("Critical path");
+    expect(container.textContent).toContain("Critical DAG compiler and manifest generation");
+    expect(container.textContent).toContain("Wave 1");
+    expect(container.textContent).toContain("FS-03");
+    expect(container.textContent).toContain("Depends on FS-00");
 
     await act(async () => {
       root.unmount();

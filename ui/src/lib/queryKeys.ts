@@ -79,6 +79,7 @@ export const queryKeys = {
   projects: {
     list: (companyId: string) => ["projects", companyId] as const,
     detail: (id: string) => ["projects", "detail", id] as const,
+    factoryArtifacts: (projectId: string) => ["projects", "factory", projectId, "artifacts"] as const,
     factoryExecutions: (projectId: string) => ["projects", "factory", projectId, "executions"] as const,
     factoryReviewState: (projectId: string) => ["projects", "factory", projectId, "review-state"] as const,
     factoryRecovery: (projectId: string) => ["projects", "factory", projectId, "recovery"] as const,

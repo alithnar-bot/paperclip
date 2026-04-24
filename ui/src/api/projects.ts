@@ -1,5 +1,6 @@
 import type {
   Project,
+  ProjectFactoryArtifact,
   ProjectFactoryOperatorSummary,
   ProjectFactoryRecoverySummary,
   ProjectFactoryResumeTaskExecutionResult,
@@ -70,6 +71,8 @@ export const projectsApi = {
     api.get<ProjectFactoryRecoverySummary>(projectPath(projectId, companyId, "/factory/recovery")),
   getFactoryOperatorSummary: (projectId: string, companyId?: string) =>
     api.get<ProjectFactoryOperatorSummary>(projectPath(projectId, companyId, "/factory/operator-summary")),
+  getFactoryArtifacts: (projectId: string, companyId?: string) =>
+    api.get<ProjectFactoryArtifact[]>(projectPath(projectId, companyId, "/factory/artifacts")),
   resumeFactoryExecution: (projectId: string, executionId: string, companyId?: string) =>
     api.post<ProjectFactoryResumeTaskExecutionResult>(
       projectPath(projectId, companyId, `/factory/executions/${encodeURIComponent(executionId)}/resume`),
