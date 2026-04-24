@@ -84,8 +84,12 @@ Implemented inside the fork today:
   - persisted gate evaluations
   - review-state summary surface
   - launch blocking on upstream gates and relevant predecessor execution tasks
+- **Phase 5 — Recovery + Operator View**
+  - derived recovery summary for resumable executions, cleanup-failed workspaces, missing workspace linkage, and orphan workspaces
+  - operator summary surface exposing open questions, gate state, pending reviews, execution counts, and recovery counts
+  - resume flow for failed executions with surviving workspaces
 
 Still pending:
 
-- recovery / operator summary surfaces
-- resumability and orphan detection
+- richer UI/operator dashboard surfaces beyond the API layer
+- broader end-to-end bootstrap demonstrations on real projects
