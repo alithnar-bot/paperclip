@@ -69,6 +69,62 @@ export type {
 export type { AssetImage } from "./asset.js";
 export type { Project, ProjectCodebase, ProjectCodebaseOrigin, ProjectGoalRef, ProjectWorkspace } from "./project.js";
 export type {
+  ProjectFactoryArtifact,
+  ProjectFactoryArtifactFormat,
+  ProjectFactoryArtifactSummary,
+  ProjectFactoryCompileResult,
+  ProjectFactoryDecision,
+  ProjectFactoryIntakeSummary,
+  ProjectFactoryMissingContextCandidate,
+  ProjectFactoryNormalizedProjectRecord,
+  ProjectFactoryQuestion,
+  AnswerProjectFactoryQuestionResult,
+  ProjectFactoryTaskExecution,
+  ProjectFactoryTaskExecutionStatus,
+  ProjectFactoryExecutionManifest,
+  ProjectFactoryExecutionManifestExecution,
+  ProjectFactoryExecutionCleanupResult,
+  ProjectFactoryLaunchTaskExecutionResult,
+  ProjectFactoryCompleteTaskExecutionResult,
+  ProjectFactoryArchiveTaskExecutionResult,
+} from "./project-factory.js";
+export {
+  PROJECT_FACTORY_ARTIFACT_FORMATS,
+  PROJECT_FACTORY_TASK_EXECUTION_STATUSES,
+} from "./project-factory.js";
+export {
+  FACTORY_MANIFEST_STATUSES,
+  FACTORY_RISK_LEVELS,
+  FACTORY_METHODOLOGIES,
+  FACTORY_ARTIFACT_KINDS,
+  FACTORY_QUESTION_STATUSES,
+  FACTORY_DECISION_TYPES,
+  FACTORY_DECISION_STATUSES,
+  FACTORY_DECISION_ACTORS,
+  FACTORY_GATE_STATUSES,
+  FACTORY_TASK_STATUSES,
+} from "./factory.js";
+export type {
+  FactoryManifestStatus,
+  FactoryRiskLevel,
+  FactoryMethodology,
+  FactoryArtifactKind,
+  FactoryQuestionStatus,
+  FactoryDecisionType,
+  FactoryDecisionStatus,
+  FactoryDecisionActor,
+  FactoryGateStatus,
+  FactoryTaskStatus,
+  FactoryProjectArtifact,
+  FactoryQuestionState,
+  FactoryDecisionRecord,
+  FactoryGateState,
+  FactoryPhase,
+  FactoryTaskManifest,
+  FactoryTaskChain,
+  FactoryProjectManifest,
+} from "./factory.js";
+export type {
   ExecutionWorkspace,
   ExecutionWorkspaceSummary,
   ExecutionWorkspaceConfig,

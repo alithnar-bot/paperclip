@@ -1,0 +1,334 @@
+{
+  "id": "paperclip-software-factory",
+  "name": "Paperclip Software Factory",
+  "version": "0.1.0-phase0",
+  "status": "planning",
+  "risk": "high",
+  "methodology": "ccpm-dag",
+  "description": "Thin-fork factory layer for Paperclip that ingests project definition, resolves ambiguity, compiles a Critical DAG, emits task specs, and later governs isolated execution.",
+  "phases": [
+    {
+      "id": "P0",
+      "name": "Interface Lock",
+      "description": "Lock the planning contract, manifest, and task pack."
+    },
+    {
+      "id": "P1",
+      "name": "Intake + Decisions",
+      "description": "Register artifacts, surface questions, and persist decisions."
+    },
+    {
+      "id": "P2",
+      "name": "Compilation",
+      "description": "Generate the Critical DAG and task specs from clarified inputs."
+    },
+    {
+      "id": "P3",
+      "name": "Execution Substrate",
+      "description": "Provision worktrees, launch tasks, and record execution state."
+    },
+    {
+      "id": "P4",
+      "name": "Review + Gates",
+      "description": "Evaluate gate readiness, review outputs, and block unsafe progression."
+    },
+    {
+      "id": "P5",
+      "name": "Recovery + Operator View",
+      "description": "Resume interrupted work and expose clear operator summaries."
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "FA-PRD",
+      "kind": "prd",
+      "title": "Factory PRD",
+      "path": "doc/factory/PRD.md",
+      "required": true,
+      "description": "Product definition for the software factory."
+    },
+    {
+      "id": "FA-TECH-SPEC",
+      "kind": "tech_spec",
+      "title": "Factory Technical Specification",
+      "path": "doc/factory/TECH-SPEC.md",
+      "required": true,
+      "description": "Technical contract for the factory planning surface."
+    },
+    {
+      "id": "FA-ARCH",
+      "kind": "architecture",
+      "title": "Factory Architecture",
+      "path": "doc/factory/ARCHITECTURE.md",
+      "required": true,
+      "description": "Layered architecture and integration boundaries."
+    },
+    {
+      "id": "FA-DECISIONS",
+      "kind": "decisions",
+      "title": "Factory Decisions",
+      "path": "doc/factory/DECISIONS.md",
+      "required": true,
+      "description": "Locked implementation decisions."
+    },
+    {
+      "id": "FA-PLAN",
+      "kind": "implementation_plan",
+      "title": "Factory Implementation Plan",
+      "path": "doc/factory/IMPLEMENTATION-PLAN.md",
+      "required": true,
+      "description": "Phase order and acceptance criteria."
+    },
+    {
+      "id": "FA-TASK-SPECS",
+      "kind": "task_spec_bundle",
+      "title": "Factory Task Pack",
+      "path": "doc/factory/task-specs/README.md",
+      "required": true,
+      "description": "Execution-grade task pack for FS-00 through FS-07."
+    }
+  ],
+  "questions": [
+    {
+      "id": "FQ-001",
+      "text": "Should the first persistence slice store factory artifacts by extending the existing document surfaces before adding dedicated project-artifact tables?",
+      "status": "open",
+      "blocking": true,
+      "answer": null,
+      "decisionRef": null
+    }
+  ],
+  "decisions": [
+    {
+      "id": "FD-001",
+      "title": "Paperclip remains the control plane",
+      "summary": "Use Paperclip for operator state, approvals, audit trail, and visibility rather than rebuilding a new control plane.",
+      "type": "architecture",
+      "status": "active",
+      "decidedBy": "operator",
+      "decidedAt": "2026-04-24T10:18:16+05:30"
+    },
+    {
+      "id": "FD-002",
+      "title": "Critical DAG is the planning model",
+      "summary": "Use Critical DAG / CCPM-style decomposition and scheduling to separate shared-state serial work from isolated parallel work.",
+      "type": "execution",
+      "status": "active",
+      "decidedBy": "operator",
+      "decidedAt": "2026-04-24T10:18:16+05:30"
+    },
+    {
+      "id": "FD-003",
+      "title": "Product repos stay external",
+      "summary": "The Paperclip fork orchestrates external product repositories and must not become a monorepo for generated product code.",
+      "type": "scope",
+      "status": "active",
+      "decidedBy": "operator",
+      "decidedAt": "2026-04-24T10:18:16+05:30"
+    }
+  ],
+  "gates": [
+    {
+      "id": "G0",
+      "title": "Interface lock complete",
+      "phaseId": "P0",
+      "status": "pending",
+      "criteria": [
+        "Factory pack exists under doc/factory/",
+        "Shared manifest contract validates the committed sample",
+        "Task pack exists for FS-00 through FS-07"
+      ],
+      "blocking": true,
+      "dependsOn": []
+    },
+    {
+      "id": "G1",
+      "title": "Clarification + compilation ready",
+      "phaseId": "P2",
+      "status": "pending",
+      "criteria": [
+        "Questions can be persisted",
+        "Decisions can be persisted and superseded",
+        "DAG compiler emits a valid manifest",
+        "Task specs are generated from clarified inputs",
+        "Architecture approval blocks downstream execution"
+      ],
+      "blocking": true,
+      "dependsOn": [
+        "G0"
+      ]
+    },
+    {
+      "id": "G2",
+      "title": "Execution substrate ready",
+      "phaseId": "P4",
+      "status": "pending",
+      "criteria": [
+        "Worktree lifecycle works end-to-end",
+        "Execution manifest updates during runs",
+        "Gate failures block progression"
+      ],
+      "blocking": true,
+      "dependsOn": [
+        "G1"
+      ]
+    },
+    {
+      "id": "G3",
+      "title": "Recovery slice ready",
+      "phaseId": "P5",
+      "status": "pending",
+      "criteria": [
+        "Interrupted runs can be resumed safely",
+        "Operator can see open questions and pending gates",
+        "PRD-to-task-pack bootstrap works end-to-end"
+      ],
+      "blocking": true,
+      "dependsOn": [
+        "G2"
+      ]
+    }
+  ],
+  "chain": {
+    "totalTasks": 8,
+    "completedTasks": 0,
+    "tasks": [
+      {
+        "id": "FS-00",
+        "name": "Interface lock, architecture, and contract pack",
+        "phaseId": "P0",
+        "wave": 0,
+        "status": "todo",
+        "estimateMin": 90,
+        "dependsOn": [],
+        "onCriticalPath": true,
+        "acceptance": [
+          "Factory pack exists",
+          "Manifest contract is locked",
+          "Task pack exists for all planned slices"
+        ]
+      },
+      {
+        "id": "FS-01",
+        "name": "Project artifact registry and intake normalization",
+        "phaseId": "P1",
+        "wave": 1,
+        "status": "todo",
+        "estimateMin": 120,
+        "dependsOn": [
+          "FS-00"
+        ],
+        "onCriticalPath": true,
+        "acceptance": [
+          "Factory artifacts can be attached to a project",
+          "Intake emits a normalized project record",
+          "Missing-context candidates are surfaced"
+        ]
+      },
+      {
+        "id": "FS-02",
+        "name": "Question queue and decision log",
+        "phaseId": "P1",
+        "wave": 1,
+        "status": "todo",
+        "estimateMin": 120,
+        "dependsOn": [
+          "FS-00"
+        ],
+        "onCriticalPath": true,
+        "acceptance": [
+          "Blocking and non-blocking questions are modeled",
+          "Answers persist into decisions",
+          "Decision supersession is supported"
+        ]
+      },
+      {
+        "id": "FS-03",
+        "name": "Critical DAG compiler and manifest generation",
+        "phaseId": "P2",
+        "wave": 2,
+        "status": "todo",
+        "estimateMin": 150,
+        "dependsOn": [
+          "FS-01",
+          "FS-02"
+        ],
+        "onCriticalPath": true,
+        "acceptance": [
+          "Manifest is generated from clarified inputs",
+          "Dependencies and waves are valid",
+          "Critical-path flags are explicit"
+        ]
+      },
+      {
+        "id": "FS-04",
+        "name": "Task-spec generator",
+        "phaseId": "P2",
+        "wave": 2,
+        "status": "todo",
+        "estimateMin": 120,
+        "dependsOn": [
+          "FS-03"
+        ],
+        "onCriticalPath": false,
+        "acceptance": [
+          "Task specs are rendered from the manifest",
+          "Specs include acceptance and finalization discipline",
+          "Spec output stays aligned with task metadata"
+        ]
+      },
+      {
+        "id": "FS-05",
+        "name": "Execution substrate and worktree manager",
+        "phaseId": "P3",
+        "wave": 3,
+        "status": "todo",
+        "estimateMin": 180,
+        "dependsOn": [
+          "FS-03"
+        ],
+        "onCriticalPath": true,
+        "acceptance": [
+          "Worktrees can be provisioned safely",
+          "Execution manifests are updated during runs",
+          "Completion markers can be tracked"
+        ]
+      },
+      {
+        "id": "FS-06",
+        "name": "Review and gate evaluator",
+        "phaseId": "P4",
+        "wave": 4,
+        "status": "todo",
+        "estimateMin": 150,
+        "dependsOn": [
+          "FS-04",
+          "FS-05"
+        ],
+        "onCriticalPath": true,
+        "acceptance": [
+          "Gate criteria are evaluated explicitly",
+          "Gate failures block progression",
+          "Review verdicts persist cleanly"
+        ]
+      },
+      {
+        "id": "FS-07",
+        "name": "Recovery and operator summary",
+        "phaseId": "P5",
+        "wave": 5,
+        "status": "todo",
+        "estimateMin": 150,
+        "dependsOn": [
+          "FS-06"
+        ],
+        "onCriticalPath": true,
+        "acceptance": [
+          "Interrupted runs can be resumed",
+          "Operator can see open questions and pending gates",
+          "End-to-end bootstrap works on a real project"
+        ]
+      }
+    ]
+  }
+}

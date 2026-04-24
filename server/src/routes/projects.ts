@@ -1,11 +1,17 @@
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import {
+  answerProjectFactoryQuestionSchema,
+  archiveProjectFactoryTaskExecutionSchema,
+  completeProjectFactoryTaskExecutionSchema,
+  createProjectFactoryQuestionSchema,
   createProjectSchema,
   createProjectWorkspaceSchema,
   findWorkspaceCommandDefinition,
   isUuidLike,
+  launchProjectFactoryTaskExecutionSchema,
   matchWorkspaceRuntimeServiceToCommand,
+  upsertProjectFactoryArtifactSchema,
   updateProjectSchema,
   updateProjectWorkspaceSchema,
   workspaceRuntimeControlTargetSchema,
@@ -13,7 +19,7 @@ import {
 import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } from "@paperclipai/shared";
 import { trackProjectCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
-import { environmentService, projectService, logActivity, secretService, workspaceOperationService } from "../services/index.js";
+import { environmentService, projectFactoryService, projectService, logActivity, secretService, workspaceOperationService } from "../services/index.js";
 import { conflict } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import {
@@ -38,6 +44,7 @@ const WORKSPACE_CONTROL_OUTPUT_MAX_CHARS = 256 * 1024;
 export function projectRoutes(db: Db) {
   const router = Router();
   const svc = projectService(db);
+  const projectFactorySvc = projectFactoryService(db);
   const secretsSvc = secretService(db);
   const workspaceOperations = workspaceOperationService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
@@ -111,6 +118,394 @@ export function projectRoutes(db: Db) {
     assertCompanyAccess(req, project.companyId);
     res.json(project);
   });
+
+  router.get("/projects/:id/factory/intake", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const summary = await projectFactorySvc.getIntakeSummary(id);
+    res.json(summary);
+  });
+
+  router.get("/projects/:id/factory/artifacts", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const artifacts = await projectFactorySvc.listProjectArtifacts(id);
+    res.json(artifacts);
+  });
+
+  router.get("/projects/:id/factory/artifacts/:key", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const artifact = await projectFactorySvc.getProjectArtifactByKey(id, String(req.params.key ?? ""));
+    if (!artifact) {
+      res.status(404).json({ error: "Project factory artifact not found" });
+      return;
+    }
+    res.json(artifact);
+  });
+
+  router.put("/projects/:id/factory/artifacts/:key", validate(upsertProjectFactoryArtifactSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    if (req.actor.type !== "board") {
+      res.status(403).json({ error: "Board authentication required" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    const result = await projectFactorySvc.upsertProjectArtifact({
+      projectId: id,
+      key: String(req.params.key ?? ""),
+      kind: req.body.kind,
+      title: req.body.title ?? null,
+      format: req.body.format,
+      body: req.body.body,
+      required: req.body.required ?? false,
+      sourcePath: req.body.sourcePath ?? null,
+      description: req.body.description ?? null,
+      changeSummary: req.body.changeSummary ?? null,
+      baseRevisionId: req.body.baseRevisionId ?? null,
+      createdByAgentId: actor.agentId ?? null,
+      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+    });
+
+    await logActivity(db, {
+      companyId: project.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: result.created ? "project.factory_artifact_created" : "project.factory_artifact_updated",
+      entityType: "project",
+      entityId: id,
+      details: {
+        key: result.artifact.key,
+        kind: result.artifact.kind,
+        sourcePath: result.artifact.sourcePath,
+        required: result.artifact.required,
+        revisionNumber: result.artifact.latestRevisionNumber,
+      },
+    });
+
+    res.status(result.created ? 201 : 200).json(result.artifact);
+  });
+
+  router.get("/projects/:id/factory/questions", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const questions = await projectFactorySvc.listQuestions(id);
+    res.json(questions);
+  });
+
+  router.post("/projects/:id/factory/questions", validate(createProjectFactoryQuestionSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    if (req.actor.type !== "board") {
+      res.status(403).json({ error: "Board authentication required" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    const question = await projectFactorySvc.createQuestion(id, {
+      text: req.body.text,
+      helpText: req.body.helpText ?? null,
+      blocking: req.body.blocking ?? false,
+      createdByAgentId: actor.agentId ?? null,
+      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+    });
+
+    await logActivity(db, {
+      companyId: project.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "project.factory_question_created",
+      entityType: "project",
+      entityId: id,
+      details: {
+        questionId: question.id,
+        blocking: question.blocking,
+      },
+    });
+
+    res.status(201).json(question);
+  });
+
+  router.post(
+    "/projects/:id/factory/questions/:questionId/respond",
+    validate(answerProjectFactoryQuestionSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const questionId = req.params.questionId as string;
+      const project = await svc.getById(id);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      assertCompanyAccess(req, project.companyId);
+      if (req.actor.type !== "board") {
+        res.status(403).json({ error: "Board authentication required" });
+        return;
+      }
+
+      const actor = getActorInfo(req);
+      const answered = await projectFactorySvc.answerQuestion(id, questionId, {
+        answer: req.body.answer,
+        decision: {
+          title: req.body.decision.title,
+          summary: req.body.decision.summary,
+          type: req.body.decision.type,
+          decidedBy: req.body.decision.decidedBy,
+          supersedesDecisionId: req.body.decision.supersedesDecisionId ?? null,
+        },
+        answeredByAgentId: actor.agentId ?? null,
+        answeredByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "project.factory_question_answered",
+        entityType: "project",
+        entityId: id,
+        details: {
+          questionId: answered.question.id,
+          decisionId: answered.decision.id,
+          decisionType: answered.decision.type,
+        },
+      });
+
+      res.json(answered);
+    },
+  );
+
+  router.get("/projects/:id/factory/decisions", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const decisions = await projectFactorySvc.listDecisions(id);
+    res.json(decisions);
+  });
+
+  router.post("/projects/:id/factory/compile", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    if (req.actor.type !== "board") {
+      res.status(403).json({ error: "Board authentication required" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    const result = await projectFactorySvc.compileProject(id, {
+      createdByAgentId: actor.agentId ?? null,
+      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+    });
+
+    await logActivity(db, {
+      companyId: project.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "project.factory_compiled",
+      entityType: "project",
+      entityId: id,
+      details: {
+        manifestId: result.manifest.id,
+        generatedArtifactKeys: result.generatedArtifactKeys,
+        generatedTaskSpecKeys: result.generatedTaskSpecKeys,
+      },
+    });
+
+    res.json(result);
+  });
+
+  router.get("/projects/:id/factory/executions", async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    const executions = await projectFactorySvc.listTaskExecutions(id);
+    res.json(executions);
+  });
+
+  router.post("/projects/:id/factory/executions", validate(launchProjectFactoryTaskExecutionSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const project = await svc.getById(id);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, project.companyId);
+    if (req.actor.type !== "board") {
+      res.status(403).json({ error: "Board authentication required" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    const result = await projectFactorySvc.launchTaskExecution(id, {
+      taskId: req.body.taskId,
+      taskSpecArtifactKey: req.body.taskSpecArtifactKey ?? null,
+      completionMarker: req.body.completionMarker ?? null,
+      notes: req.body.notes ?? null,
+      launchedByAgentId: actor.agentId ?? null,
+      launchedByUserId: actor.actorType === "user" ? actor.actorId : null,
+    });
+
+    await logActivity(db, {
+      companyId: project.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "project.factory_execution_launched",
+      entityType: "project",
+      entityId: id,
+      details: {
+        executionId: result.execution.id,
+        taskId: result.execution.taskId,
+        executionWorkspaceId: result.execution.executionWorkspaceId,
+        branchName: result.execution.branchName,
+        executionManifestKey: result.executionManifestKey,
+      },
+    });
+
+    res.status(201).json(result);
+  });
+
+  router.post(
+    "/projects/:id/factory/executions/:executionId/complete",
+    validate(completeProjectFactoryTaskExecutionSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const executionId = req.params.executionId as string;
+      const project = await svc.getById(id);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      assertCompanyAccess(req, project.companyId);
+      if (req.actor.type !== "board") {
+        res.status(403).json({ error: "Board authentication required" });
+        return;
+      }
+
+      const actor = getActorInfo(req);
+      const result = await projectFactorySvc.markTaskExecutionCompleted(id, executionId, {
+        completionMarker: req.body.completionMarker ?? null,
+        notes: req.body.notes ?? null,
+        completedByAgentId: actor.agentId ?? null,
+        completedByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "project.factory_execution_completed",
+        entityType: "project",
+        entityId: id,
+        details: {
+          executionId: result.execution.id,
+          taskId: result.execution.taskId,
+          completionMarker: result.execution.completionMarker,
+          executionWorkspaceId: result.execution.executionWorkspaceId,
+          executionManifestKey: result.executionManifestKey,
+        },
+      });
+
+      res.json(result);
+    },
+  );
+
+  router.post(
+    "/projects/:id/factory/executions/:executionId/archive",
+    validate(archiveProjectFactoryTaskExecutionSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const executionId = req.params.executionId as string;
+      const project = await svc.getById(id);
+      if (!project) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      assertCompanyAccess(req, project.companyId);
+      if (req.actor.type !== "board") {
+        res.status(403).json({ error: "Board authentication required" });
+        return;
+      }
+
+      const actor = getActorInfo(req);
+      const result = await projectFactorySvc.archiveTaskExecution(id, executionId, {
+        notes: req.body.notes ?? null,
+        archivedByAgentId: actor.agentId ?? null,
+        archivedByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "project.factory_execution_archived",
+        entityType: "project",
+        entityId: id,
+        details: {
+          executionId: result.execution.id,
+          taskId: result.execution.taskId,
+          executionWorkspaceId: result.execution.executionWorkspaceId,
+          executionManifestKey: result.executionManifestKey,
+          cleaned: result.cleanup?.cleaned ?? null,
+          cleanedPath: result.cleanup?.cleanedPath ?? null,
+          warningCount: result.cleanup?.warnings.length ?? 0,
+        },
+      });
+
+      res.json(result);
+    },
+  );
 
   router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
