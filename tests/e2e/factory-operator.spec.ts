@@ -257,6 +257,50 @@ test.describe("factory operator tab", () => {
       }),
     };
 
+    const prdArtifact = {
+      id: "artifact-prd",
+      companyId: company.id,
+      projectId: project.id,
+      key: "prd",
+      kind: "prd",
+      required: true,
+      sourcePath: "PRD.md",
+      description: "Product requirements for the investing intelligence platform.",
+      title: "Annual Report Intelligence PRD",
+      format: "markdown",
+      latestRevisionId: "revision-prd",
+      latestRevisionNumber: 1,
+      createdByAgentId: null,
+      createdByUserId: "user-1",
+      updatedByAgentId: null,
+      updatedByUserId: "user-1",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      body: "# Annual Report Intelligence\n\nScreen companies on exact financial and governance criteria.",
+    };
+
+    const techSpecArtifact = {
+      id: "artifact-tech-spec",
+      companyId: company.id,
+      projectId: project.id,
+      key: "tech-spec",
+      kind: "tech_spec",
+      required: true,
+      sourcePath: "TECH-SPEC.md",
+      description: "Technical design for the extraction and intelligence pipeline.",
+      title: "Annual Report Intelligence Tech Spec",
+      format: "markdown",
+      latestRevisionId: "revision-tech-spec",
+      latestRevisionNumber: 1,
+      createdByAgentId: null,
+      createdByUserId: "user-1",
+      updatedByAgentId: null,
+      updatedByUserId: "user-1",
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      body: "# Tech Spec\n\nPostgres, Qdrant, and Neo4j work together.",
+    };
+
     const updatedOperatorSummary = {
       ...initialOperatorSummary,
       activeExecutionCount: 2,
@@ -301,6 +345,14 @@ test.describe("factory operator tab", () => {
       });
     });
 
+    await page.route(`**/api/projects/${project.id}/factory/artifacts**`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([dagArtifact, prdArtifact, techSpecArtifact]),
+      });
+    });
+
     await page.route(`**/api/projects/${project.id}/factory/executions/execution-failed/resume**`, async (route) => {
       resumed = true;
       await route.fulfill({
@@ -317,15 +369,26 @@ test.describe("factory operator tab", () => {
     await page.goto(`/${company.issuePrefix}/projects/${projectRef}/factory`);
 
     await expect(page.getByText("Factory control panel")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-testid="factory-critical-dag-graph"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="factory-docs-viewer"]')).toHaveCount(0);
+
+    await page.getByRole("tab", { name: "Critical DAG" }).click();
+    await expect(page).toHaveURL(new RegExp(`/${company.issuePrefix}/projects/${projectRef}/critical-dag$`));
+    await expect(page.locator('[data-testid="factory-critical-dag-graph"]')).toBeVisible();
     await expect(page.getByText("Architecture review")).toBeVisible();
     await expect(page.getByText("Execution can be resumed from its surviving workspace.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
 
     await page.getByRole("button", { name: "Resume" }).click();
 
-    await expect(page.getByText("No current recovery blockers.")).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText("No recovery work is pending.")).toBeVisible();
+    await expect(page.getByText("No recovery work is pending.")).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole("button", { name: "Resume" })).toHaveCount(0);
+
+    await page.getByRole("tab", { name: "Factory Docs" }).click();
+    await expect(page).toHaveURL(new RegExp(`/${company.issuePrefix}/projects/${projectRef}/factory-docs$`));
+    await expect(page.getByText("Factory docs")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Annual Report Intelligence PRD" })).toBeVisible();
+    await expect(page.getByText("Screen companies on exact financial and governance criteria.")).toBeVisible();
     } finally {
       if (companyId) {
         await page.request.delete(`/api/companies/${companyId}`).catch(() => {});

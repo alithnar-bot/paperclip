@@ -33,7 +33,7 @@ import { PluginSlotMount, PluginSlotOutlet, usePluginSlots } from "@/plugins/slo
 
 /* ── Top-level tab types ── */
 
-type ProjectBaseTab = "overview" | "list" | "factory" | "workspaces" | "configuration" | "budget";
+type ProjectBaseTab = "overview" | "list" | "factory" | "critical-dag" | "factory-docs" | "workspaces" | "configuration" | "budget";
 type ProjectPluginTab = `plugin:${string}`;
 type ProjectTab = ProjectBaseTab | ProjectPluginTab;
 
@@ -50,6 +50,8 @@ function resolveProjectTab(pathname: string, projectId: string): ProjectTab | nu
   if (tab === "configuration") return "configuration";
   if (tab === "budget") return "budget";
   if (tab === "factory") return "factory";
+  if (tab === "critical-dag") return "critical-dag";
+  if (tab === "factory-docs") return "factory-docs";
   if (tab === "issues") return "list";
   if (tab === "workspaces") return "workspaces";
   return null;
@@ -401,6 +403,14 @@ export function ProjectDetail() {
       navigate(`/projects/${canonicalProjectRef}/factory`, { replace: true });
       return;
     }
+    if (activeTab === "critical-dag") {
+      navigate(`/projects/${canonicalProjectRef}/critical-dag`, { replace: true });
+      return;
+    }
+    if (activeTab === "factory-docs") {
+      navigate(`/projects/${canonicalProjectRef}/factory-docs`, { replace: true });
+      return;
+    }
     if (activeTab === "workspaces") {
       navigate(`/projects/${canonicalProjectRef}/workspaces`, { replace: true });
       return;
@@ -522,9 +532,12 @@ export function ProjectDetail() {
   // Redirect bare /projects/:id to cached tab or default /issues
   if (routeProjectRef && activeTab === null) {
     let cachedTab: string | null = null;
-    if (project?.id) {
-      try { cachedTab = localStorage.getItem(`paperclip:project-tab:${project.id}`); } catch {}
-    }
+    try {
+      cachedTab = localStorage.getItem(`paperclip:project-tab:${routeProjectRef}`);
+      if (!cachedTab && project?.id) {
+        cachedTab = localStorage.getItem(`paperclip:project-tab:${project.id}`);
+      }
+    } catch {}
     if (cachedTab === "overview") {
       return <Navigate to={`/projects/${canonicalProjectRef}/overview`} replace />;
     }
@@ -536,6 +549,12 @@ export function ProjectDetail() {
     }
     if (cachedTab === "factory") {
       return <Navigate to={`/projects/${canonicalProjectRef}/factory`} replace />;
+    }
+    if (cachedTab === "critical-dag") {
+      return <Navigate to={`/projects/${canonicalProjectRef}/critical-dag`} replace />;
+    }
+    if (cachedTab === "factory-docs") {
+      return <Navigate to={`/projects/${canonicalProjectRef}/factory-docs`} replace />;
     }
     if (cachedTab === "workspaces" && workspaceTabDecisionLoaded && showWorkspacesTab) {
       return <Navigate to={`/projects/${canonicalProjectRef}/workspaces`} replace />;
@@ -555,9 +574,12 @@ export function ProjectDetail() {
 
   const handleTabChange = (tab: ProjectTab) => {
     // Cache the active tab per project
-    if (project?.id) {
-      try { localStorage.setItem(`paperclip:project-tab:${project.id}`, tab); } catch {}
-    }
+    try {
+      localStorage.setItem(`paperclip:project-tab:${canonicalProjectRef}`, tab);
+      if (project?.id) {
+        localStorage.setItem(`paperclip:project-tab:${project.id}`, tab);
+      }
+    } catch {}
     if (isProjectPluginTab(tab)) {
       navigate(`/projects/${canonicalProjectRef}?tab=${encodeURIComponent(tab)}`);
       return;
@@ -566,6 +588,10 @@ export function ProjectDetail() {
       navigate(`/projects/${canonicalProjectRef}/overview`);
     } else if (tab === "factory") {
       navigate(`/projects/${canonicalProjectRef}/factory`);
+    } else if (tab === "critical-dag") {
+      navigate(`/projects/${canonicalProjectRef}/critical-dag`);
+    } else if (tab === "factory-docs") {
+      navigate(`/projects/${canonicalProjectRef}/factory-docs`);
     } else if (tab === "workspaces") {
       navigate(`/projects/${canonicalProjectRef}/workspaces`);
     } else if (tab === "budget") {
@@ -639,6 +665,8 @@ export function ProjectDetail() {
             { value: "list", label: "Issues" },
             { value: "overview", label: "Overview" },
             { value: "factory", label: "Factory" },
+            { value: "critical-dag", label: "Critical DAG" },
+            { value: "factory-docs", label: "Factory Docs" },
             ...(showWorkspacesTab ? [{ value: "workspaces", label: "Workspaces" }] : []),
             { value: "configuration", label: "Configuration" },
             { value: "budget", label: "Budget" },
@@ -669,6 +697,25 @@ export function ProjectDetail() {
           companyId={resolvedCompanyId}
           projectId={project.id}
           projectRef={canonicalProjectRef}
+          view="factory"
+        />
+      )}
+
+      {activeTab === "critical-dag" && project?.id && resolvedCompanyId && (
+        <ProjectFactoryContent
+          companyId={resolvedCompanyId}
+          projectId={project.id}
+          projectRef={canonicalProjectRef}
+          view="critical-dag"
+        />
+      )}
+
+      {activeTab === "factory-docs" && project?.id && resolvedCompanyId && (
+        <ProjectFactoryContent
+          companyId={resolvedCompanyId}
+          projectId={project.id}
+          projectRef={canonicalProjectRef}
+          view="docs"
         />
       )}
 

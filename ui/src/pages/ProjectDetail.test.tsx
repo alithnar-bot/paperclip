@@ -11,31 +11,34 @@ const closePanelMock = vi.fn();
 const setBreadcrumbsMock = vi.fn();
 const pushToastMock = vi.fn();
 const setSelectedCompanyIdMock = vi.fn();
+const locationState = vi.hoisted(() => ({ pathname: "/projects/project-alpha/factory", search: "", hash: "" }));
+const localStorageState = vi.hoisted(() => new Map<string, string>());
+const projectFixture = vi.hoisted(() => ({
+  id: "project-1",
+  companyId: "company-1",
+  urlKey: "project-alpha",
+  goalId: null,
+  goalIds: [],
+  goals: [],
+  name: "Project Alpha",
+  description: "Factory-ready project",
+  status: "in_progress",
+  leadAgentId: null,
+  targetDate: null,
+  color: "#22c55e",
+  pauseReason: null,
+  pausedAt: null,
+  archivedAt: null,
+  executionWorkspacePolicy: null,
+  codebase: null,
+  workspaces: [],
+  primaryWorkspace: null,
+  createdAt: new Date("2026-04-24T00:00:00.000Z"),
+  updatedAt: new Date("2026-04-24T00:00:00.000Z"),
+}));
 
 const mockProjectsApi = vi.hoisted(() => ({
-  get: vi.fn(async () => ({
-    id: "project-1",
-    companyId: "company-1",
-    urlKey: "project-alpha",
-    goalId: null,
-    goalIds: [],
-    goals: [],
-    name: "Project Alpha",
-    description: "Factory-ready project",
-    status: "in_progress",
-    leadAgentId: null,
-    targetDate: null,
-    color: "#22c55e",
-    pauseReason: null,
-    pausedAt: null,
-    archivedAt: null,
-    executionWorkspacePolicy: null,
-    codebase: null,
-    workspaces: [],
-    primaryWorkspace: null,
-    createdAt: new Date("2026-04-24T00:00:00.000Z"),
-    updatedAt: new Date("2026-04-24T00:00:00.000Z"),
-  })),
+  get: vi.fn(async () => projectFixture),
   update: vi.fn(),
 }));
 
@@ -44,7 +47,7 @@ vi.mock("@/lib/router", () => ({
   Navigate: ({ to }: { to: string }) => <div data-testid="navigate">{to}</div>,
   useParams: () => ({ projectId: "project-alpha" }),
   useNavigate: () => navigateMock,
-  useLocation: () => ({ pathname: "/projects/project-alpha/factory", search: "", hash: "" }),
+  useLocation: () => locationState,
 }));
 
 vi.mock("../api/projects", () => ({ projectsApi: mockProjectsApi }));
@@ -75,11 +78,30 @@ vi.mock("../components/BudgetPolicyCard", () => ({ BudgetPolicyCard: () => <div 
 vi.mock("../components/IssuesList", () => ({ IssuesList: () => <div /> }));
 vi.mock("../components/PageSkeleton", () => ({ PageSkeleton: () => <div>Loading</div> }));
 vi.mock("../components/PageTabBar", () => ({
-  PageTabBar: ({ items }: { items: Array<{ label: string }> }) => <div>{items.map((item) => item.label).join(", ")}</div>,
+  PageTabBar: ({
+    items,
+    onValueChange,
+  }: {
+    items: Array<{ value: string; label: string }>;
+    onValueChange?: (value: string) => void;
+  }) => (
+    <div>
+      <div>{items.map((item) => item.label).join(", ")}</div>
+      <div>
+        {items.map((item) => (
+          <button key={item.value} type="button" onClick={() => onValueChange?.(item.value)}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  ),
 }));
 vi.mock("../components/ProjectWorkspacesContent", () => ({ ProjectWorkspacesContent: () => <div /> }));
 vi.mock("../components/ProjectFactoryContent", () => ({
-  ProjectFactoryContent: () => <div data-testid="factory-content-stub">Factory content stub</div>,
+  ProjectFactoryContent: ({ view }: { view?: string }) => (
+    <div data-testid="factory-content-stub">Factory content stub ({view ?? "factory"})</div>
+  ),
 }));
 vi.mock("../lib/project-workspaces-tab", () => ({ buildProjectWorkspaceSummaries: () => [] }));
 vi.mock("@/components/ui/tabs", () => ({ Tabs: ({ children }: { children: unknown }) => <div>{children as never}</div> }));
@@ -106,14 +128,31 @@ describe("ProjectDetail", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
+    locationState.pathname = "/projects/project-alpha/factory";
+    locationState.search = "";
+    locationState.hash = "";
+    localStorageState.clear();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => localStorageState.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        localStorageState.set(key, value);
+      },
+      removeItem: (key: string) => {
+        localStorageState.delete(key);
+      },
+      clear: () => {
+        localStorageState.clear();
+      },
+    });
     vi.clearAllMocks();
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
+    vi.unstubAllGlobals();
   });
 
-  it("renders the Factory tab and shows factory content on the factory route", async () => {
+  it("renders the factory-adjacent tabs and shows factory content on the factory route", async () => {
     const root = createRoot(container);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -127,9 +166,90 @@ describe("ProjectDetail", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.textContent).toContain("Issues, Overview, Factory, Configuration, Budget");
-    expect(container.textContent).toContain("Factory content stub");
+    expect(container.textContent).toContain("Issues, Overview, Factory, Critical DAG, Factory Docs, Configuration, Budget");
+    expect(container.textContent).toContain("Factory content stub (factory)");
     expect(mockProjectsApi.get).toHaveBeenCalledWith("project-alpha", "company-1");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("restores the cached critical dag tab from the bare project route", async () => {
+    locationState.pathname = "/projects/project-alpha";
+    localStorage.setItem("paperclip:project-tab:project-alpha", "critical-dag");
+
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ProjectDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    expect(container.textContent).toContain("/projects/project-alpha/critical-dag");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("restores the cached factory docs tab from the bare project route", async () => {
+    locationState.pathname = "/projects/project-alpha";
+    localStorage.setItem("paperclip:project-tab:project-alpha", "factory-docs");
+
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ProjectDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+
+    expect(container.textContent).toContain("/projects/project-alpha/factory-docs");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("navigates the new top-level factory tabs to their dedicated routes", async () => {
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ProjectDetail />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    await flushReact();
+
+    const criticalDagButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Critical DAG");
+    const factoryDocsButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent === "Factory Docs");
+
+    expect(criticalDagButton).toBeTruthy();
+    expect(factoryDocsButton).toBeTruthy();
+
+    await act(async () => {
+      criticalDagButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {
+      factoryDocsButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(navigateMock).toHaveBeenCalledWith("/projects/project-alpha/critical-dag");
+    expect(navigateMock).toHaveBeenCalledWith("/projects/project-alpha/factory-docs");
 
     await act(async () => {
       root.unmount();

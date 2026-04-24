@@ -13,6 +13,7 @@ import type {
 } from "@paperclipai/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProjectFactoryContent } from "./ProjectFactoryContent";
+import { ThemeProvider } from "../context/ThemeContext";
 
 const getFactoryExecutionsMock = vi.fn<(projectId: string, companyId?: string) => Promise<ProjectFactoryTaskExecution[]>>();
 const getFactoryReviewStateMock = vi.fn<(projectId: string, companyId?: string) => Promise<ProjectFactoryReviewState>>();
@@ -257,21 +258,46 @@ async function flushReact() {
   });
 }
 
+async function renderFactoryContent(target: HTMLDivElement, view: "factory" | "critical-dag" | "docs" = "factory") {
+  const root = createRoot(target);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <ProjectFactoryContent companyId="company-1" projectId="project-1" projectRef="project-alpha" view={view} />
+        </QueryClientProvider>
+      </ThemeProvider>,
+    );
+  });
+  await flushReact();
+  await flushReact();
+
+  return { root };
+}
+
 describe("ProjectFactoryContent", () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
+    getFactoryExecutionsMock.mockReset();
+    getFactoryReviewStateMock.mockReset();
+    getFactoryRecoveryMock.mockReset();
+    getFactoryOperatorSummaryMock.mockReset();
+    getFactoryArtifactsMock.mockReset();
+    resumeFactoryExecutionMock.mockReset();
+    pushToastMock.mockReset();
     getFactoryArtifactsMock.mockResolvedValue([]);
-    vi.clearAllMocks();
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
   });
 
-  it("renders operator summary metrics, gate state, executions, and recovery issues", async () => {
+  it("renders factory control metrics and executions on the factory view", async () => {
     getFactoryOperatorSummaryMock.mockResolvedValue(createOperatorSummary());
     getFactoryReviewStateMock.mockResolvedValue(createReviewState());
     getFactoryRecoveryMock.mockResolvedValue(createRecoverySummary());
@@ -280,55 +306,32 @@ describe("ProjectFactoryContent", () => {
       createExecution({ id: "execution-failed", taskId: "FS-07", taskName: "Recovery and operator view", status: "failed" }),
     ]);
 
-    const root = createRoot(container);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <ProjectFactoryContent companyId="company-1" projectId="project-1" projectRef="project-alpha" />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
+    const { root } = await renderFactoryContent(container, "factory");
 
     expect(container.textContent).toContain("Factory control panel");
     expect(container.textContent).toContain("Open questions");
     expect(container.textContent).toContain("Blocking questions");
     expect(container.textContent).toContain("Pending reviews");
     expect(container.textContent).toContain("Recovery issues");
-    expect(container.textContent).toContain("Architecture review");
-    expect(container.textContent).toContain("Waiting for review corrections.");
     expect(container.textContent).toContain("Review and gates");
     expect(container.textContent).toContain("Recovery and operator view");
-    expect(container.textContent).toContain("Execution can be resumed from its surviving workspace.");
-    expect(container.querySelector('button[data-testid="resume-execution-execution-failed"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Architecture review");
+    expect(container.textContent).not.toContain("Factory docs");
+    expect(container.textContent).not.toContain("Live DAG graph");
 
     await act(async () => {
       root.unmount();
     });
   });
 
-  it("renders the compiled critical DAG when a project-json factory artifact is available", async () => {
-    getFactoryOperatorSummaryMock.mockResolvedValue(createOperatorSummary());
+  it("renders the critical dag view with graph, gate state, and recovery queue", async () => {
+    getFactoryOperatorSummaryMock.mockRejectedValue(new Error("operator summary failed"));
     getFactoryReviewStateMock.mockResolvedValue(createReviewState());
     getFactoryRecoveryMock.mockResolvedValue(createRecoverySummary());
-    getFactoryExecutionsMock.mockResolvedValue([]);
+    getFactoryExecutionsMock.mockRejectedValue(new Error("executions failed"));
     getFactoryArtifactsMock.mockResolvedValue([createFactoryArtifact()]);
 
-    const root = createRoot(container);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <ProjectFactoryContent companyId="company-1" projectId="project-1" projectRef="project-alpha" />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
+    const { root } = await renderFactoryContent(container, "critical-dag");
 
     expect(container.textContent).toContain("Critical DAG");
     expect(container.textContent).toContain("Methodology");
@@ -338,6 +341,57 @@ describe("ProjectFactoryContent", () => {
     expect(container.textContent).toContain("Wave 1");
     expect(container.textContent).toContain("FS-03");
     expect(container.textContent).toContain("Depends on FS-00");
+    expect(container.querySelector('[data-testid="factory-critical-dag-graph"]')).not.toBeNull();
+    expect(container.textContent).toContain("Live DAG graph");
+    expect(container.textContent).toContain("Architecture review");
+    expect(container.textContent).toContain("Execution can be resumed from its surviving workspace.");
+    expect(container.querySelector('button[data-testid="resume-execution-execution-failed"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Factory docs");
+    expect(container.textContent).not.toContain("Factory control panel");
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("renders live factory docs from artifact bodies", async () => {
+    getFactoryOperatorSummaryMock.mockRejectedValue(new Error("operator summary failed"));
+    getFactoryReviewStateMock.mockRejectedValue(new Error("review state failed"));
+    getFactoryRecoveryMock.mockRejectedValue(new Error("recovery failed"));
+    getFactoryExecutionsMock.mockRejectedValue(new Error("executions failed"));
+    getFactoryArtifactsMock.mockResolvedValue([
+      createFactoryArtifact({
+        id: "artifact-prd",
+        key: "prd",
+        kind: "prd",
+        title: "Annual Report Intelligence PRD",
+        format: "markdown",
+        sourcePath: "PRD.md",
+        description: "Product requirements for the investing intelligence platform.",
+        body: "# Annual Report Intelligence\n\nScreen companies on exact financial and governance criteria.",
+      }),
+      createFactoryArtifact({
+        id: "artifact-tech-spec",
+        key: "tech-spec",
+        kind: "tech_spec",
+        title: "Annual Report Intelligence Tech Spec",
+        format: "markdown",
+        sourcePath: "TECH-SPEC.md",
+        description: "Technical design for the extraction and intelligence pipeline.",
+        body: "# Tech Spec\n\nPostgres, Qdrant, and Neo4j work together.",
+      }),
+      createFactoryArtifact(),
+    ]);
+
+    const { root } = await renderFactoryContent(container, "docs");
+
+    expect(container.textContent).toContain("Factory docs");
+    expect(container.textContent).toContain("Annual Report Intelligence PRD");
+    expect(container.textContent).toContain("Screen companies on exact financial and governance criteria.");
+    expect(container.textContent).toContain("PRD.md");
+    expect(container.querySelector('[data-testid="factory-docs-viewer"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Factory control panel");
+    expect(container.textContent).not.toContain("Architecture review");
 
     await act(async () => {
       root.unmount();
@@ -363,38 +417,17 @@ describe("ProjectFactoryContent", () => {
       ],
     });
 
-    getFactoryOperatorSummaryMock
-      .mockResolvedValueOnce(createOperatorSummary({ recovery: initialRecovery, recoveryIssueCount: 2, resumableExecutionCount: 1, failedExecutionCount: 1, activeExecutionCount: 1 }))
-      .mockResolvedValue(createOperatorSummary({ recovery: updatedRecovery, recoveryIssueCount: 1, resumableExecutionCount: 0, failedExecutionCount: 0, activeExecutionCount: 2 }));
+    getFactoryOperatorSummaryMock.mockRejectedValue(new Error("operator summary failed"));
     getFactoryReviewStateMock.mockResolvedValue(createReviewState());
     getFactoryRecoveryMock.mockResolvedValueOnce(initialRecovery).mockResolvedValue(updatedRecovery);
-    getFactoryExecutionsMock
-      .mockResolvedValueOnce([
-        createExecution({ id: "execution-active", taskId: "FS-06", taskName: "Review and gates", status: "active" }),
-        createExecution({ id: "execution-failed", taskId: "FS-07", taskName: "Recovery and operator view", status: "failed" }),
-      ])
-      .mockResolvedValue([
-        createExecution({ id: "execution-active", taskId: "FS-06", taskName: "Review and gates", status: "active" }),
-        createExecution({ id: "execution-failed", taskId: "FS-07", taskName: "Recovery and operator view", status: "active" }),
-      ]);
+    getFactoryExecutionsMock.mockRejectedValue(new Error("executions failed"));
     resumeFactoryExecutionMock.mockResolvedValue({
       execution: createExecution({ id: "execution-failed", taskId: "FS-07", taskName: "Recovery and operator view", status: "active" }),
       executionWorkspace: null,
       executionManifestKey: "execution-manifest",
     });
 
-    const root = createRoot(container);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <ProjectFactoryContent companyId="company-1" projectId="project-1" projectRef="project-alpha" />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
+    const { root } = await renderFactoryContent(container, "critical-dag");
 
     const resumeButton = container.querySelector('button[data-testid="resume-execution-execution-failed"]');
     expect(resumeButton).not.toBeNull();
@@ -406,7 +439,8 @@ describe("ProjectFactoryContent", () => {
     await flushReact();
 
     expect(resumeFactoryExecutionMock).toHaveBeenCalledWith("project-1", "execution-failed", "company-1");
-    expect(getFactoryOperatorSummaryMock.mock.calls.length).toBeGreaterThan(1);
+    expect(getFactoryOperatorSummaryMock).not.toHaveBeenCalled();
+    expect(getFactoryExecutionsMock).not.toHaveBeenCalled();
     expect(container.textContent).not.toContain("Execution can be resumed from its surviving workspace.");
     expect(container.querySelector('button[data-testid="resume-execution-execution-failed"]')).toBeNull();
     expect(pushToastMock).toHaveBeenCalledWith(expect.objectContaining({ tone: "success" }));
@@ -422,18 +456,7 @@ describe("ProjectFactoryContent", () => {
     getFactoryRecoveryMock.mockResolvedValue(createRecoverySummary());
     getFactoryExecutionsMock.mockResolvedValue([]);
 
-    const root = createRoot(container);
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <ProjectFactoryContent companyId="company-1" projectId="project-1" projectRef="project-alpha" />
-        </QueryClientProvider>,
-      );
-    });
-    await flushReact();
-    await flushReact();
+    const { root } = await renderFactoryContent(container);
 
     expect(container.textContent).toContain("operator summary failed");
 
