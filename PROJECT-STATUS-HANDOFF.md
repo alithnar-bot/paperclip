@@ -1,201 +1,95 @@
 # Project Status Handoff
 
-Updated: 2026-04-24 08:27:45 UTC
+Updated: 2026-04-24 10:22:11 UTC
 Repo root: `/Users/halbot/work/.worktrees/paperclip-factory-core-v1`
 Branch: `feat/factory-core-v1`
+Upstream tracking: `origin/feat/factory-core-v1`
+Latest pushed commit: `4934acd27e7d18859e4eb9e533e9da3e49203384`
 
 ## Current status
 
 - Phase 0: implemented
 - Phase 1: implemented
 - Phase 2: implemented
-- Phase 3: started, not complete
-- Nothing committed or pushed yet
+- Phase 3: implemented
+- Latest branch state: committed and pushed
+- Working tree status at update time: expected to be clean after this handoff commit
 
-## What was completed before this handoff
+## Commit plan that was used
 
-Already in the worktree before the latest Phase 3 attempt:
+A **single coherent feature commit** was used for the factory work landed so far.
 
+Reason:
+- the current branch had no earlier incremental commits for Phases 0-2
+- the work is tightly coupled across docs, shared contracts, DB schema, routes, services, migrations, and tests
+- both migration journal/snapshots and the integrated validation now reflect the combined Phase 0-3 slice cleanly
+- splitting it retroactively would have produced prettier history, but with more mechanical risk than actual value
+
+Committed feature commit:
+- `4934acd27e7d18859e4eb9e533e9da3e49203384` — `feat: add paperclip project factory core through phase 3`
+
+## What is now implemented
+
+### Phase 0 — Interface lock
 - factory planning pack under `doc/factory/`
-- Phase 1 backend/shared/db slice
-- Phase 2 compile route/service
-- generated `project-json` + task-spec bundle flow
-- passing targeted tests for the earlier phases
+- manifest and factory contract definitions under `packages/shared/src/types/factory.ts`
+- manifest validators under `packages/shared/src/validators/factory.ts`
+- sample manifest validation test in `packages/shared/src/factory.test.ts`
 
-## What I completed in the latest Phase 3 session
+### Phase 1 — Intake + decisions
+- project artifact registry via:
+  - `packages/db/src/schema/project_documents.ts`
+  - `server/src/services/project-factory.ts`
+- project-scoped clarification questions via:
+  - `packages/db/src/schema/project_factory_questions.ts`
+- project-scoped decisions via:
+  - `packages/db/src/schema/project_factory_decisions.ts`
+- intake summary route/service surface via `/api/projects/:id/factory/*`
 
-1. Re-read repo and factory guidance:
-   - `AGENTS.md`
-   - `doc/factory/IMPLEMENTATION-PLAN.md`
-   - `doc/factory/task-specs/FS-05.md`
-2. Confirmed Claude Code delegation is still broken in this shell:
-   - `claude auth status --text` looks fine
-   - `claude -p ...` fails with `401 Invalid authentication credentials`
-3. Identified the correct existing substrate to reuse rather than reinvent:
-   - `server/src/services/workspace-runtime.ts`
-   - `server/src/services/execution-workspaces.ts`
-   - `server/src/services/workspace-operations.ts`
-   - `server/src/services/execution-workspace-policy.ts`
-4. Added failing Phase 3 tests first.
-5. Started the shared contract changes for Phase 3.
+### Phase 2 — Compilation
+- compile service + route implemented
+- generated artifacts persisted back into project-linked documents:
+  - `project-json`
+  - `task-specs-readme`
+  - `task-spec-fs-00` through `task-spec-fs-07`
+- compile validation restored and preserved in service/route tests
 
-## Important finding
+### Phase 3 — Execution substrate
+- new persistence table:
+  - `packages/db/src/schema/project_factory_task_executions.ts`
+- migration generated:
+  - `packages/db/src/migrations/0070_cheerful_roland_deschain.sql`
+- service methods implemented:
+  - `listTaskExecutions(...)`
+  - `launchTaskExecution(...)`
+  - `markTaskExecutionCompleted(...)`
+  - `archiveTaskExecution(...)`
+- route surface implemented:
+  - `GET /api/projects/:id/factory/executions`
+  - `POST /api/projects/:id/factory/executions`
+  - `POST /api/projects/:id/factory/executions/:executionId/complete`
+  - `POST /api/projects/:id/factory/executions/:executionId/archive`
+- execution manifest artifact generation/persistence implemented
+- launch pack writing implemented inside realized worktrees:
+  - `.paperclip/factory/executions/<execution-id>/TASK.md`
+  - `.paperclip/factory/executions/<execution-id>/execution.json`
+- archive flow wired through existing workspace cleanup helpers
 
-Phase 3 should be a thin factory layer on top of Paperclip's existing execution workspace machinery.
+## Important architectural note
 
-Do **not** build a separate worktree engine.
-Use the existing:
+Phase 3 is implemented as a **thin factory layer** on top of Paperclip’s existing execution workspace machinery.
 
-- execution workspace persistence
-- git worktree realization
-- cleanup helpers
-- workspace operation recorder
-- runtime service control
+It reuses the existing substrate rather than inventing a parallel one:
+- `server/src/services/workspace-runtime.ts`
+- `server/src/services/execution-workspaces.ts`
+- `server/src/services/workspace-operations.ts`
+- `server/src/services/execution-workspace-policy.ts`
 
-## Files touched in the latest Phase 3 session
+That remains the correct approach for future work.
 
-- `server/src/__tests__/project-factory-service.test.ts`
-- `server/src/__tests__/project-factory-routes.test.ts`
-- `packages/shared/src/types/project-factory.ts`
-- `packages/shared/src/validators/project-factory.ts`
-- `packages/shared/src/types/index.ts`
-- `packages/shared/src/validators/index.ts`
-- `packages/shared/src/index.ts` ← currently needs repair
+## Validation status
 
-## What is currently broken
-
-### 1. Shared root export file needs repair
-
-`packages/shared/src/index.ts` was patched incorrectly around the project/factory export block.
-
-The section around these exports needs to be re-read and repaired cleanly:
-
-- `Project`
-- `ProjectCodebase`
-- `ProjectGoalRef`
-- `ProjectWorkspace`
-- `ProjectFactory*`
-- related factory constants/types exports
-
-### 2. One test was replaced instead of extended
-
-In `server/src/__tests__/project-factory-service.test.ts`, the prior Phase 2 compile test was replaced by the new Phase 3 test instead of adding the new test alongside it.
-
-Restore the compile test coverage before final validation.
-
-### 3. Phase 3 implementation is still missing
-
-These service/route pieces do not exist yet:
-
-- `launchTaskExecution(...)`
-- `listTaskExecutions(...)`
-- `markTaskExecutionCompleted(...)`
-- `archiveTaskExecution(...)`
-- corresponding API routes
-- execution manifest persistence
-- factory task execution DB table + migration
-
-## Last failing test state
-
-These failures are expected and are the current restart point.
-
-### Service test failure
-From `server/src/__tests__/project-factory-service.test.ts`:
-
-- `svc.launchTaskExecution is not a function`
-
-### Route test failure
-From `server/src/__tests__/project-factory-routes.test.ts`:
-
-- `POST /api/projects/project-1/factory/executions` returned `404`
-- expected `201`
-
-## Intended Phase 3 shape
-
-### New persistence
-Add a factory task execution table, likely something like:
-
-- `project_factory_task_executions`
-
-Minimum fields:
-
-- `id`
-- `company_id`
-- `project_id`
-- `task_id`
-- `task_name`
-- `task_spec_artifact_key`
-- `status`
-- `execution_workspace_id`
-- `project_workspace_id`
-- `completion_marker`
-- `completion_notes`
-- `metadata`
-- `launched_by_agent_id`
-- `launched_by_user_id`
-- `completed_by_agent_id`
-- `completed_by_user_id`
-- `launched_at`
-- `completed_at`
-- `archived_at`
-- timestamps
-
-### Shared surface
-The Phase 3 shared types/validators should cover:
-
-- task execution status
-- task execution record
-- execution manifest shape
-- launch payload
-- complete payload
-- archive payload
-
-### Service behavior
-The factory service should:
-
-1. resolve compiled manifest + task spec artifact
-2. choose the primary project workspace
-3. realize an isolated git worktree using existing runtime helpers
-4. create an execution workspace record
-5. create a factory task execution record
-6. write a launch pack into the worktree, e.g.:
-   - `.paperclip/factory/executions/<execution-id>/TASK.md`
-   - `.paperclip/factory/executions/<execution-id>/execution.json`
-7. persist/update an `execution-manifest` project artifact
-8. mark complete when the completion marker matches
-9. archive by cleaning up the worktree via existing cleanup helpers and archiving the execution workspace record
-
-### Route surface to add
-Recommended routes:
-
-- `GET /api/projects/:id/factory/executions`
-- `POST /api/projects/:id/factory/executions`
-- `POST /api/projects/:id/factory/executions/:executionId/complete`
-- `POST /api/projects/:id/factory/executions/:executionId/archive`
-
-All mutating routes should remain board-only for now.
-All mutations should log activity.
-
-## Next exact steps
-
-1. Repair `packages/shared/src/index.ts`.
-2. Restore the displaced Phase 2 compile test in `server/src/__tests__/project-factory-service.test.ts`.
-3. Add DB schema for factory task executions.
-4. Export the new schema in `packages/db/src/schema/index.ts`.
-5. Generate/fix the migration.
-6. Extend `packages/shared/src/types/project-factory.ts` if needed after schema settles.
-7. Extend `server/src/services/project-factory.ts` with:
-   - `listTaskExecutions`
-   - `launchTaskExecution`
-   - `markTaskExecutionCompleted`
-   - `archiveTaskExecution`
-8. Extend `server/src/routes/projects.ts` with the new Phase 3 endpoints.
-9. Add activity logging for launch/complete/archive.
-10. Re-run targeted tests and then typecheck.
-
-## Useful commands when resuming
-
-Node is not on PATH by default in this Hermes shell, so prefix Node-based commands like this:
+The following validations passed on the integrated Phase 0-3 tree:
 
 ```bash
 PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/vitest run server/src/__tests__/project-factory-service.test.ts server/src/__tests__/project-factory-routes.test.ts
@@ -204,21 +98,46 @@ PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/tsc -p packages/db/tsconfig.jso
 PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/tsc -p server/tsconfig.json --noEmit --pretty false
 ```
 
-If using pnpm:
+Test result:
+- `2` test files passed
+- `10` tests passed
+
+## Independent review notes
+
+An independent reviewer pass found no security blockers.
+
+Non-blocking follow-up suggestions worth remembering later:
+- consider making completion-state and workspace-state updates transactional where practical
+- consider a cleaner status than `cleanup_failed` for abandoned non-runtime-created workspaces
+- confirm legacy decision-status data cannot violate the new parsed enum expectations
+
+None of the above block the current branch from being resumed or reviewed.
+
+## What to do next
+
+Most likely next step:
+1. start **Phase 4 — Review + Gates**
+
+Reasonable concrete follow-ons:
+- persist review packets / verdicts
+- add gate-evaluation state beyond readiness scaffolding
+- enforce phase/gate blocking on execution progression
+- prepare a PR from this branch
+
+## Useful commands when resuming
 
 ```bash
-PATH=/opt/homebrew/bin:$PATH /opt/homebrew/bin/pnpm --filter @paperclipai/shared typecheck
-PATH=/opt/homebrew/bin:$PATH /opt/homebrew/bin/pnpm --filter @paperclipai/db typecheck
-PATH=/opt/homebrew/bin:$PATH /opt/homebrew/bin/pnpm --filter @paperclipai/server typecheck
+git checkout feat/factory-core-v1
+git pull --ff-only
+PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/vitest run server/src/__tests__/project-factory-service.test.ts server/src/__tests__/project-factory-routes.test.ts
+PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/tsc -p packages/shared/tsconfig.json --noEmit --pretty false
+PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/tsc -p packages/db/tsconfig.json --noEmit --pretty false
+PATH=/opt/homebrew/bin:$PATH ./node_modules/.bin/tsc -p server/tsconfig.json --noEmit --pretty false
 ```
 
-## Git state snapshot at handoff
-
-At the point of this handoff, `git status --short` showed the worktree still contains uncommitted changes from the earlier phases plus the in-progress Phase 3 edits.
-
-Do not assume the tree is clean.
-Re-run `git status --short` before continuing.
+PR shortcut from GitHub remote output:
+- `https://github.com/alithnar-bot/paperclip/pull/new/feat/factory-core-v1`
 
 ## Restart point in one sentence
 
-Restart by fixing `packages/shared/src/index.ts`, restoring the replaced Phase 2 test, then implementing Phase 3 as a thin factory task-execution layer on top of the existing execution workspace/worktree services.
+Restart from the pushed `feat/factory-core-v1` branch with Phase 0-3 complete, then continue into Phase 4 review/gates rather than revisiting the execution substrate.
