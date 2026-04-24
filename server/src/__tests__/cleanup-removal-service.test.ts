@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   activityLog,
@@ -7,12 +7,16 @@ import {
   companies,
   companySkills,
   createDb,
+  documentRevisions,
+  documents,
   heartbeatRuns,
   issueComments,
+  issueDocuments,
   issueExecutionDecisions,
   issueReadStates,
   issues,
 } from "@paperclipai/db";
+import { COMPANY_SCOPED_DELETE_TARGET_NAMES, companyService } from "../services/companies.ts";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -101,6 +105,70 @@ describeEmbeddedPostgres("cleanup removal services", () => {
 
     return { agentId, companyId, issueId, runId };
   }
+
+  it("tracks every direct company-scoped foreign-key table in the delete plan", async () => {
+    const rows = await db.execute(sql`
+      select distinct tc.table_name
+      from information_schema.table_constraints tc
+      join information_schema.key_column_usage kcu
+        on tc.constraint_name = kcu.constraint_name and tc.table_schema = kcu.table_schema
+      join information_schema.constraint_column_usage ccu
+        on ccu.constraint_name = tc.constraint_name and ccu.table_schema = tc.table_schema
+      where tc.constraint_type = 'FOREIGN KEY'
+        and tc.table_schema = 'public'
+        and ccu.table_name = 'companies'
+        and kcu.column_name = 'company_id'
+      order by tc.table_name
+    `);
+
+    const expected = rows.map((row) => String(row.table_name)).sort();
+    const actual = [...COMPANY_SCOPED_DELETE_TARGET_NAMES].sort();
+
+    expect(actual).toEqual(expected);
+  });
+
+  it("removes document revisions and issue document links before deleting the company", async () => {
+    const { companyId, issueId } = await seedFixture();
+    const documentId = randomUUID();
+    const revisionId = randomUUID();
+
+    await db.insert(documents).values({
+      id: documentId,
+      companyId,
+      title: "Runbook",
+      latestBody: "# Runbook",
+      latestRevisionId: revisionId,
+      latestRevisionNumber: 1,
+      createdByUserId: "user-1",
+      updatedByUserId: "user-1",
+    });
+
+    await db.insert(documentRevisions).values({
+      id: revisionId,
+      companyId,
+      documentId,
+      revisionNumber: 1,
+      title: "Runbook",
+      body: "# Runbook",
+      createdByUserId: "user-1",
+    });
+
+    await db.insert(issueDocuments).values({
+      id: randomUUID(),
+      companyId,
+      issueId,
+      documentId,
+      key: "runbook",
+    });
+
+    const removed = await companyService(db).remove(companyId);
+
+    expect(removed?.id).toBe(companyId);
+    await expect(db.select().from(companies).where(eq(companies.id, companyId))).resolves.toHaveLength(0);
+    await expect(db.select().from(documents).where(eq(documents.companyId, companyId))).resolves.toHaveLength(0);
+    await expect(db.select().from(documentRevisions).where(eq(documentRevisions.companyId, companyId))).resolves.toHaveLength(0);
+    await expect(db.select().from(issueDocuments).where(eq(issueDocuments.companyId, companyId))).resolves.toHaveLength(0);
+  });
 
   it("removes agent-owned issue comments and run-linked activity before deleting the agent", async () => {
     const { agentId, companyId, issueId, runId } = await seedFixture();
