@@ -39,6 +39,7 @@ function registerModuleMocks() {
     executionWorkspaceService: () => mockExecutionWorkspaceService,
     environmentService: () => mockEnvironmentService,
     logActivity: mockLogActivity,
+    projectFactoryService: () => ({}),
     projectService: () => mockProjectService,
     secretService: () => mockSecretService,
     workspaceOperationService: () => mockWorkspaceOperationService,
