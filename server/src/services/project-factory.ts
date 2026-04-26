@@ -6,6 +6,7 @@ import {
   documentRevisions,
   documents,
   executionWorkspaces,
+  issues,
   projectDocuments,
   projectFactoryDecisions,
   projectFactoryGateEvaluations,
@@ -61,7 +62,10 @@ import {
   projectFactoryTaskIdSchema,
 } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
+import { issueService } from "./issues.js";
+import { heartbeatService } from "./heartbeat.js";
 import { executionWorkspaceService } from "./execution-workspaces.js";
+import { queueIssueAssignmentWakeup, type IssueAssignmentWakeupDeps } from "./issue-assignment-wakeup.js";
 import { parseProjectExecutionWorkspacePolicy } from "./execution-workspace-policy.js";
 import { workspaceOperationService } from "./workspace-operations.js";
 import { cleanupExecutionWorkspaceArtifacts, realizeExecutionWorkspace } from "./workspace-runtime.js";
@@ -429,6 +433,51 @@ function buildManifestFromProjectState(args: {
   };
 }
 
+function rehydrateManifestFromProjectState(args: {
+  projectId: string;
+  artifacts: ProjectFactoryArtifactSummary[];
+  questions: ProjectFactoryQuestion[];
+  decisions: ProjectFactoryDecision[];
+  blocked: boolean;
+  seedManifest: FactoryProjectManifest;
+}): FactoryProjectManifest {
+  const seed = args.seedManifest;
+  return {
+    ...seed,
+    status: args.blocked ? "blocked" : seed.status === "blocked" ? "planning" : seed.status,
+    artifacts: args.artifacts.map((artifact) => ({
+      id: artifact.id,
+      kind: artifact.kind,
+      title: artifact.title ?? artifact.key,
+      path: artifact.sourcePath ?? `/projects/${args.projectId}/factory/artifacts/${artifact.key}`,
+      required: artifact.required,
+      description: artifact.description ?? null,
+    })),
+    questions: args.questions.map((question) => ({
+      id: question.id,
+      text: question.text,
+      status: question.status,
+      blocking: question.blocking,
+      answer: question.answer,
+      decisionRef: question.decisionRef,
+    })),
+    decisions: args.decisions.map((decision) => ({
+      id: decision.id,
+      title: decision.title,
+      summary: decision.summary,
+      type: decision.type,
+      status: decision.status,
+      decidedBy: decision.decidedBy,
+      decidedAt: decision.decidedAt.toISOString(),
+    })),
+    chain: {
+      totalTasks: seed.chain.tasks.length,
+      completedTasks: seed.chain.tasks.filter((task) => task.status === "done").length,
+      tasks: seed.chain.tasks,
+    },
+  };
+}
+
 function buildTaskSpecsReadmeMarkdown(manifest: FactoryProjectManifest) {
   const lines = [
     "# Generated Factory Task Specs",
@@ -510,6 +559,13 @@ function buildTaskSpecMarkdown(args: {
 }
 
 type ProjectFactoryTaskExecutionRow = typeof projectFactoryTaskExecutions.$inferSelect;
+
+type ProjectFactoryIssueService = Pick<ReturnType<typeof issueService>, "create">;
+
+interface ProjectFactoryServiceDeps {
+  issueSvc?: ProjectFactoryIssueService;
+  heartbeat?: IssueAssignmentWakeupDeps;
+}
 
 function mapReviewRow(row: typeof projectFactoryReviews.$inferSelect): ProjectFactoryExecutionReview {
   return {
@@ -697,9 +753,11 @@ function buildExecutionReviewSummaries(reviews: ProjectFactoryExecutionReview[])
   return Array.from(summariesByExecutionId.values());
 }
 
-export function projectFactoryService(db: Db) {
+export function projectFactoryService(db: Db, deps: ProjectFactoryServiceDeps = {}) {
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperations = workspaceOperationService(db);
+  const issueSvc = deps.issueSvc ?? issueService(db);
+  const heartbeat = deps.heartbeat ?? heartbeatService(db);
 
   async function listGateEvaluationsInternal(projectId: string) {
     const rows = await db
@@ -1233,7 +1291,7 @@ export function projectFactoryService(db: Db) {
     }
 
     for (const workspace of workspaces) {
-      if (referencedWorkspaceIds.has(workspace.id)) continue;
+      if (referencedWorkspaceIds.has(workspace.id) || workspace.status === "archived") continue;
       orphanWorkspaceIds.add(workspace.id);
       issues.push({
         kind: "orphan_execution_workspace",
@@ -1398,6 +1456,7 @@ export function projectFactoryService(db: Db) {
         taskSpecArtifactKey?: string | null;
         completionMarker?: string | null;
         notes?: string | null;
+        assigneeAgentId?: string | null;
         launchedByAgentId?: string | null;
         launchedByUserId?: string | null;
       },
@@ -1474,6 +1533,7 @@ export function projectFactoryService(db: Db) {
       let realizedWorkspace: Awaited<ReturnType<typeof realizeExecutionWorkspace>> | null = null;
       let persistedExecutionWorkspace: ExecutionWorkspace | null = null;
       let executionRow: ProjectFactoryTaskExecutionRow | null = null;
+      let linkedIssue: Awaited<ReturnType<ProjectFactoryIssueService["create"]>> | null = null;
 
       try {
         realizedWorkspace = await realizeExecutionWorkspace({
@@ -1587,13 +1647,57 @@ export function projectFactoryService(db: Db) {
           executionManifestKey: manifestKey,
         });
 
+        if (input.assigneeAgentId) {
+          linkedIssue = await issueSvc.create(project.companyId, {
+            projectId: project.id,
+            projectWorkspaceId: primaryWorkspace.id,
+            title: `${task.id} — ${task.name}`,
+            description: `Factory execution issue for ${task.id}.\n\nExecution ID: ${execution.id}`,
+            status: "todo",
+            priority: "high",
+            assigneeAgentId: input.assigneeAgentId,
+            createdByAgentId: input.launchedByAgentId ?? null,
+            createdByUserId: input.launchedByUserId ?? null,
+            originKind: "factory_execution",
+            originId: execution.id,
+            executionWorkspaceId: persistedExecutionWorkspace.id,
+            executionWorkspacePreference: "reuse_existing",
+          });
+          await executionWorkspacesSvc.update(persistedExecutionWorkspace.id, {
+            sourceIssueId: linkedIssue.id,
+            lastUsedAt: now,
+          });
+          await queueIssueAssignmentWakeup({
+            heartbeat,
+            issue: linkedIssue,
+            reason: "issue_assigned",
+            mutation: "create",
+            contextSource: "project_factory.launch",
+            requestedByActorType: input.launchedByUserId ? "user" : input.launchedByAgentId ? "agent" : "system",
+            requestedByActorId: input.launchedByUserId ?? input.launchedByAgentId ?? null,
+            rethrowOnError: true,
+          });
+        }
+
         return {
           execution,
           executionWorkspace: await executionWorkspacesSvc.getById(persistedExecutionWorkspace.id),
           executionManifestKey: manifestKey,
+          linkedIssue: linkedIssue
+            ? {
+                id: linkedIssue.id,
+                identifier: linkedIssue.identifier ?? null,
+                status: linkedIssue.status,
+                assigneeAgentId: linkedIssue.assigneeAgentId ?? null,
+              }
+            : null,
         };
       } catch (error) {
         const failureReason = error instanceof Error ? error.message : String(error);
+
+        if (linkedIssue) {
+          await db.delete(issues).where(eq(issues.id, linkedIssue.id));
+        }
 
         if (executionRow) {
           const nextMetadata = {
@@ -1853,15 +1957,34 @@ export function projectFactoryService(db: Db) {
         });
       }
 
+      let seedManifest: FactoryProjectManifest | null = null;
+      const existingManifestArtifact = await loadProjectArtifactByKey(project.id, "project-json");
+      if (existingManifestArtifact?.body) {
+        try {
+          seedManifest = factoryProjectManifestSchema.parse(JSON.parse(existingManifestArtifact.body));
+        } catch {
+          throw conflict("Existing project-json artifact is not valid factory manifest JSON");
+        }
+      }
+
       const manifest = factoryProjectManifestSchema.parse(
-        buildManifestFromProjectState({
-          projectId: project.id,
-          projectName: project.name,
-          artifacts,
-          questions,
-          decisions,
-          blocked: false,
-        }),
+        seedManifest
+          ? rehydrateManifestFromProjectState({
+              projectId: project.id,
+              artifacts,
+              questions,
+              decisions,
+              blocked: false,
+              seedManifest,
+            })
+          : buildManifestFromProjectState({
+              projectId: project.id,
+              projectName: project.name,
+              artifacts,
+              questions,
+              decisions,
+              blocked: false,
+            }),
       );
 
       const generatedArtifactKeys: string[] = [];
@@ -1898,12 +2021,12 @@ export function projectFactoryService(db: Db) {
 
       await persistGeneratedArtifact({
         key: "project-json",
-        title: "Compiled project.json",
+        title: existingManifestArtifact?.title ?? "Compiled project.json",
         kind: "dag_manifest",
         format: "json",
         body: `${JSON.stringify(manifest, null, 2)}\n`,
-        sourcePath: "generated/project.json",
-        description: "Generated Critical DAG manifest for the project factory.",
+        sourcePath: existingManifestArtifact?.sourcePath ?? "generated/project.json",
+        description: existingManifestArtifact?.description ?? "Generated Critical DAG manifest for the project factory.",
       });
 
       await persistGeneratedArtifact({

@@ -15,6 +15,7 @@ import {
   issueInboxArchives,
   issueRelations,
   issues,
+  projectFactoryTaskExecutions,
   projectWorkspaces,
   projects,
 } from "@paperclipai/db";
@@ -1797,6 +1798,78 @@ describeEmbeddedPostgres("issueService.create workspace inheritance", () => {
     expect(followUp.executionWorkspaceSettings).toEqual({
       mode: "operator_branch",
     });
+  });
+
+  it("reserves factory execution workspaces for their linked factory issue", async () => {
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+    const projectWorkspaceId = randomUUID();
+    const executionWorkspaceId = randomUUID();
+    const executionId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(instanceSettings).values({
+      singletonKey: "default",
+      experimental: { enableIsolatedWorkspaces: true },
+    });
+    await db.insert(projects).values({
+      id: projectId,
+      companyId,
+      name: "Workspace project",
+      status: "in_progress",
+    });
+    await db.insert(projectWorkspaces).values({
+      id: projectWorkspaceId,
+      companyId,
+      projectId,
+      name: "Primary workspace",
+    });
+    await db.insert(executionWorkspaces).values({
+      id: executionWorkspaceId,
+      companyId,
+      projectId,
+      projectWorkspaceId,
+      mode: "isolated_workspace",
+      strategyType: "git_worktree",
+      name: "Factory worktree",
+      status: "active",
+      providerType: "git_worktree",
+    });
+    await db.insert(projectFactoryTaskExecutions).values({
+      id: executionId,
+      companyId,
+      projectId,
+      taskId: "FS-05",
+      taskName: "Execution substrate and worktree manager",
+      taskSpecArtifactKey: "task-spec-fs-05",
+      status: "active",
+      executionWorkspaceId,
+      projectWorkspaceId,
+    });
+
+    await expect(
+      svc.create(companyId, {
+        projectId,
+        title: "Manual issue",
+        executionWorkspaceId,
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    const linkedIssue = await svc.create(companyId, {
+      projectId,
+      title: "Linked factory issue",
+      executionWorkspaceId,
+      originKind: "factory_execution",
+      originId: executionId,
+    });
+    expect(linkedIssue.executionWorkspaceId).toBe(executionWorkspaceId);
+    expect(linkedIssue.originKind).toBe("factory_execution");
+    expect(linkedIssue.originId).toBe(executionId);
   });
 });
 
