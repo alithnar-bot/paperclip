@@ -392,6 +392,7 @@ export function projectRoutes(db: Db) {
       taskSpecArtifactKey: req.body.taskSpecArtifactKey ?? null,
       completionMarker: req.body.completionMarker ?? null,
       notes: req.body.notes ?? null,
+      assigneeAgentId: req.body.assigneeAgentId ?? null,
       launchedByAgentId: actor.agentId ?? null,
       launchedByUserId: actor.actorType === "user" ? actor.actorId : null,
     });
@@ -409,6 +410,7 @@ export function projectRoutes(db: Db) {
         taskId: result.execution.taskId,
         executionWorkspaceId: result.execution.executionWorkspaceId,
         branchName: result.execution.branchName,
+        linkedIssueId: result.linkedIssue?.id ?? null,
         executionManifestKey: result.executionManifestKey,
       },
     });

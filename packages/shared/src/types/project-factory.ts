@@ -195,10 +195,18 @@ export interface ProjectFactoryExecutionCleanupResult {
   warnings: string[];
 }
 
+export interface ProjectFactoryLinkedIssueSummary {
+  id: string;
+  identifier: string | null;
+  status: string;
+  assigneeAgentId: string | null;
+}
+
 export interface ProjectFactoryLaunchTaskExecutionResult {
   execution: ProjectFactoryTaskExecution;
   executionWorkspace: ExecutionWorkspace | null;
   executionManifestKey: string;
+  linkedIssue: ProjectFactoryLinkedIssueSummary | null;
 }
 
 export interface ProjectFactoryCompleteTaskExecutionResult {

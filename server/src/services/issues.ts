@@ -20,6 +20,7 @@ import {
   issueReadStates,
   issues,
   labels,
+  projectFactoryTaskExecutions,
   projectWorkspaces,
   projects,
 } from "@paperclipai/db";
@@ -1031,6 +1032,35 @@ export function issueService(db: Db) {
     }
   }
 
+  async function assertFactoryExecutionWorkspaceBinding(
+    companyId: string,
+    executionWorkspaceId: string,
+    originKind: string | null | undefined,
+    originId: string | null | undefined,
+    dbOrTx: DbReader = db,
+  ) {
+    const factoryExecution = await dbOrTx
+      .select({
+        id: projectFactoryTaskExecutions.id,
+      })
+      .from(projectFactoryTaskExecutions)
+      .where(
+        and(
+          eq(projectFactoryTaskExecutions.companyId, companyId),
+          eq(projectFactoryTaskExecutions.executionWorkspaceId, executionWorkspaceId),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+    if (!factoryExecution) return;
+    if (originKind === "factory_execution" && originId === factoryExecution.id) return;
+    throw conflict("Execution workspace is reserved for its linked factory execution issue", {
+      executionWorkspaceId,
+      executionId: factoryExecution.id,
+      originKind: originKind ?? null,
+      originId: originId ?? null,
+    });
+  }
+
   async function assertValidLabelIds(companyId: string, labelIds: string[], dbOrTx: any = db) {
     if (labelIds.length === 0) return;
     const existing = await dbOrTx
@@ -1872,7 +1902,7 @@ export function issueService(db: Db) {
         ...issueData
       } = data;
       const isolatedWorkspacesEnabled = (await instanceSettings.getExperimental()).enableIsolatedWorkspaces;
-      if (!isolatedWorkspacesEnabled) {
+      if (!isolatedWorkspacesEnabled && issueData.originKind !== "factory_execution") {
         delete issueData.executionWorkspaceId;
         delete issueData.executionWorkspacePreference;
         delete issueData.executionWorkspaceSettings;
@@ -1970,8 +2000,17 @@ export function issueService(db: Db) {
         if (projectWorkspaceId) {
           await assertValidProjectWorkspace(companyId, issueData.projectId, projectWorkspaceId, tx);
         }
+        const nextOriginKind = issueData.originKind ?? "manual";
+        const nextOriginId = issueData.originId ?? null;
         if (executionWorkspaceId) {
           await assertValidExecutionWorkspace(companyId, issueData.projectId, executionWorkspaceId, tx);
+          await assertFactoryExecutionWorkspaceBinding(
+            companyId,
+            executionWorkspaceId,
+            nextOriginKind,
+            nextOriginId,
+            tx,
+          );
         }
         // Self-correcting counter: use MAX(issue_number) + 1 if the counter
         // has drifted below the actual max, preventing identifier collisions.
@@ -2065,7 +2104,7 @@ export function issueService(db: Db) {
         ...issueData
       } = data;
       const isolatedWorkspacesEnabled = (await instanceSettings.getExperimental()).enableIsolatedWorkspaces;
-      if (!isolatedWorkspacesEnabled) {
+      if (!isolatedWorkspacesEnabled && issueData.originKind !== "factory_execution") {
         delete issueData.executionWorkspaceId;
         delete issueData.executionWorkspacePreference;
         delete issueData.executionWorkspaceSettings;
@@ -2115,8 +2154,16 @@ export function issueService(db: Db) {
       if (nextProjectWorkspaceId) {
         await assertValidProjectWorkspace(existing.companyId, nextProjectId, nextProjectWorkspaceId);
       }
+      const nextOriginKind = issueData.originKind !== undefined ? issueData.originKind : existing.originKind;
+      const nextOriginId = issueData.originId !== undefined ? issueData.originId : existing.originId;
       if (nextExecutionWorkspaceId) {
         await assertValidExecutionWorkspace(existing.companyId, nextProjectId, nextExecutionWorkspaceId);
+        await assertFactoryExecutionWorkspaceBinding(
+          existing.companyId,
+          nextExecutionWorkspaceId,
+          nextOriginKind,
+          nextOriginId,
+        );
       }
 
       applyStatusSideEffects(issueData.status, patch);

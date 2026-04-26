@@ -31,6 +31,7 @@ vi.mock("../telemetry.js", () => ({
 vi.mock("../services/index.js", () => ({
   environmentService: () => mockEnvironmentService,
   logActivity: mockLogActivity,
+  projectFactoryService: () => ({}),
   projectService: () => mockProjectService,
   secretService: () => mockSecretService,
   workspaceOperationService: () => mockWorkspaceOperationService,
@@ -49,6 +50,7 @@ function registerModuleMocks() {
   vi.doMock("../services/index.js", () => ({
     environmentService: () => mockEnvironmentService,
     logActivity: mockLogActivity,
+    projectFactoryService: () => ({}),
     projectService: () => mockProjectService,
     secretService: () => mockSecretService,
     workspaceOperationService: () => mockWorkspaceOperationService,

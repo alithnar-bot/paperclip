@@ -77,6 +77,7 @@ export const launchProjectFactoryTaskExecutionSchema = z.object({
   taskSpecArtifactKey: projectFactoryArtifactKeySchema.nullable().optional(),
   completionMarker: z.string().trim().min(1).max(500).nullable().optional(),
   notes: z.string().trim().max(4000).nullable().optional(),
+  assigneeAgentId: z.string().uuid().nullable().optional(),
 });
 
 export type LaunchProjectFactoryTaskExecution = z.infer<typeof launchProjectFactoryTaskExecutionSchema>;

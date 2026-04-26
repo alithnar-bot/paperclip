@@ -84,6 +84,7 @@ export type {
   ProjectFactoryExecutionManifest,
   ProjectFactoryExecutionManifestExecution,
   ProjectFactoryExecutionCleanupResult,
+  ProjectFactoryLinkedIssueSummary,
   ProjectFactoryLaunchTaskExecutionResult,
   ProjectFactoryCompleteTaskExecutionResult,
   ProjectFactoryArchiveTaskExecutionResult,

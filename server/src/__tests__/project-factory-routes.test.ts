@@ -334,17 +334,23 @@ describe("project factory routes", () => {
         updatedAt: new Date(),
       },
       executionManifestKey: "execution-manifest",
+      linkedIssue: {
+        id: "issue-1",
+        identifier: "FACA-1",
+        status: "todo",
+        assigneeAgentId: "11111111-1111-4111-8111-111111111111",
+      },
     });
 
     const app = await createApp();
     const res = await request(app)
       .post("/api/projects/project-1/factory/executions")
-      .send({ taskId: "FS-05" });
+      .send({ taskId: "FS-05", assigneeAgentId: "11111111-1111-4111-8111-111111111111" });
 
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(mockProjectFactoryService.launchTaskExecution).toHaveBeenCalledWith(
       "project-1",
-      expect.objectContaining({ taskId: "FS-05", launchedByUserId: "board-user" }),
+      expect.objectContaining({ taskId: "FS-05", assigneeAgentId: "11111111-1111-4111-8111-111111111111", launchedByUserId: "board-user" }),
     );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
@@ -355,6 +361,7 @@ describe("project factory routes", () => {
           taskId: "FS-05",
           executionWorkspaceId: "workspace-1",
           branchName: "factory/project-1/FS-05",
+          linkedIssueId: "issue-1",
         }),
       }),
     );

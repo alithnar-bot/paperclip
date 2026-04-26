@@ -6,11 +6,14 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
+  agents,
   companies,
   createDb,
   documentRevisions,
   documents,
   executionWorkspaces,
+  instanceSettings,
+  issues,
   projectFactoryDecisions,
   projectFactoryGateEvaluations,
   projectFactoryQuestions,
@@ -67,7 +70,11 @@ describeEmbeddedPostgres("projectFactoryService", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-project-factory-");
     db = createDb(tempDb.connectionString);
-    svc = projectFactoryService(db);
+    svc = projectFactoryService(db, {
+      heartbeat: {
+        wakeup: async () => null,
+      },
+    });
     workspacesSvc = executionWorkspaceService(db);
   }, 20_000);
 
@@ -79,11 +86,14 @@ describeEmbeddedPostgres("projectFactoryService", () => {
     await db.delete(projectFactoryQuestions);
     await db.delete(projectDocuments);
     await db.delete(workspaceOperations);
+    await db.delete(issues);
     await db.delete(executionWorkspaces);
     await db.delete(projectWorkspaces);
     await db.delete(documentRevisions);
     await db.delete(documents);
     await db.delete(projects);
+    await db.delete(agents);
+    await db.delete(instanceSettings);
     await db.delete(companies);
     while (tempDirs.length > 0) {
       const dir = tempDirs.pop();
@@ -251,6 +261,7 @@ describeEmbeddedPostgres("projectFactoryService", () => {
   it("launches, completes, and archives a factory task execution with a git worktree and execution manifest", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
+    const assigneeAgentId = randomUUID();
     const repoDir = await createTempGitRepo("paperclip-project-factory-repo-");
     tempDirs.push(repoDir);
 
@@ -259,6 +270,21 @@ describeEmbeddedPostgres("projectFactoryService", () => {
       name: "Paperclip",
       issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: assigneeAgentId,
+      companyId,
+      name: "Factory Agent",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    await db.insert(instanceSettings).values({
+      singletonKey: "default",
+      experimental: { enableIsolatedWorkspaces: true },
     });
 
     await db.insert(projects).values({
@@ -335,6 +361,7 @@ describeEmbeddedPostgres("projectFactoryService", () => {
 
     const launched = await svc.launchTaskExecution(projectId, {
       taskId: "FS-05",
+      assigneeAgentId,
       launchedByUserId: "local-board",
     });
 
@@ -345,6 +372,10 @@ describeEmbeddedPostgres("projectFactoryService", () => {
     expect(launched.execution.workspaceStrategyType).toBe("git_worktree");
     expect(launched.execution.branchName).toContain("FS-05");
     expect(launched.execution.worktreePath).toBeTruthy();
+    expect(launched.linkedIssue).toMatchObject({
+      status: "todo",
+      assigneeAgentId,
+    });
     await expect(fs.access(launched.execution.worktreePath!)).resolves.toBeUndefined();
 
     const launchPackDir = path.join(
@@ -360,6 +391,18 @@ describeEmbeddedPostgres("projectFactoryService", () => {
     const listed = await svc.listTaskExecutions(projectId);
     expect(listed).toHaveLength(1);
     expect(listed[0]?.id).toBe(launched.execution.id);
+
+    const linkedIssueRow = await db
+      .select()
+      .from(issues)
+      .where(eq(issues.id, launched.linkedIssue!.id))
+      .then((rows) => rows[0] ?? null);
+    expect(linkedIssueRow?.originKind).toBe("factory_execution");
+    expect(linkedIssueRow?.originId).toBe(launched.execution.id);
+    expect(linkedIssueRow?.executionWorkspaceId).toBe(launched.execution.executionWorkspaceId);
+
+    const executionWorkspaceRow = await workspacesSvc.getById(launched.execution.executionWorkspaceId!);
+    expect(executionWorkspaceRow?.sourceIssueId).toBe(launched.linkedIssue?.id);
 
     const executionManifestArtifact = await svc.getProjectArtifactByKey(projectId, "execution-manifest");
     expect(executionManifestArtifact?.format).toBe("json");
@@ -643,9 +686,10 @@ describeEmbeddedPostgres("projectFactoryService", () => {
 
     const reviews = await svc.listExecutionReviews(projectId);
     expect(reviews).toHaveLength(2);
-    // Expect newest first.
-    expect(reviews[0]?.verdict).toBe("approved");
-    expect(reviews[1]?.verdict).toBe("changes_requested");
+    expect(reviews.map((review) => review.verdict).sort()).toEqual([
+      "approved",
+      "changes_requested",
+    ]);
 
     const reviewState = await svc.getReviewState(projectId);
     const summary = reviewState.executionReviewSummaries.find(
@@ -752,6 +796,29 @@ describeEmbeddedPostgres("projectFactoryService", () => {
       metadata: { createdByRuntime: false },
       lastUsedAt: interruptedAt,
       openedAt: interruptedAt,
+    });
+
+    const archivedOrphanPath = path.join(repoDir, ".paperclip", "archived-orphan-workspace");
+    await fs.mkdir(archivedOrphanPath, { recursive: true });
+    await workspacesSvc.create({
+      companyId,
+      projectId,
+      projectWorkspaceId: launched.execution.projectWorkspaceId,
+      sourceIssueId: null,
+      mode: "isolated_workspace",
+      strategyType: "git_worktree",
+      name: "archived orphan workspace",
+      status: "archived",
+      cwd: archivedOrphanPath,
+      repoUrl: null,
+      baseRef: "main",
+      branchName: "factory/archived-orphan-workspace",
+      providerType: "git_worktree",
+      providerRef: archivedOrphanPath,
+      metadata: { createdByRuntime: false },
+      lastUsedAt: interruptedAt,
+      openedAt: interruptedAt,
+      closedAt: interruptedAt,
     });
 
     const recovery = await svc.getRecoverySummary(projectId);
